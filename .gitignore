@@ -1,0 +1,9 @@
+appworld/
+runs/
+data/
+.trim_baseline/
+__pycache__/
+*.pyc
+*.sqlite3
+data-package/
+docs/论文整理/

@@ -1,0 +1,173 @@
+pilot:
+  id: pilot
+  schema_version: '1.0'
+  arm: appworld-traceoffload
+  traceoffload: disabled
+agent:
+  step_limit: 40
+  cost_limit: 100.0
+  source_path: appworld
+models:
+  large:
+    provider: openai_compatible_vllm
+    model_id: Qwen3.8-27B
+    client_model: openai/Qwen3.8-27B
+    served_model_name: Qwen3.8-27B
+    api_base: http://127.0.0.1:8300/v1
+    api_key: dummy
+    request_kwargs:
+      drop_params: true
+      parallel_tool_calls: true
+      temperature: 0.0
+      top_p: 1.0
+      seed: 42
+      max_tokens: 8192
+    send_tool_choice: false
+  small:
+    provider: openai_compatible_vllm
+    model_id: Qwen3.5-9B
+    client_model: openai/Qwen3.5-9B
+    served_model_name: Qwen3.5-9B
+    api_base: http://127.0.0.1:8800/v1
+    api_key: dummy
+    request_kwargs:
+      drop_params: true
+      parallel_tool_calls: true
+      temperature: 0.0
+      top_p: 1.0
+      seed: 42
+      max_tokens: 8192
+    send_tool_choice: false
+  decoding:
+    temperature: 0.0
+    top_p: 1.0
+    seed: 42
+    max_output_tokens: 8192
+runner:
+  calibration_version: calibration-v1
+  modes:
+  - llm_only
+  - slm_only
+  - static_route
+  - guarded_fallback
+  - oracle
+  - traceoffload
+  history_store:
+    backend: sqlite
+    modes:
+    - classifier_route
+    path: history.sqlite3
+  static_route:
+    rule: estimated_input_tokens_below
+    threshold_tokens: 4000
+  guarded_fallback:
+    verifier_guard:
+      kind: guard
+      id: schema
+      version: v1
+  routing:
+    strategy: heuristic_evidence_v1
+    policy_version: route-policy-v2
+    min_utility_gain: 0.02
+    admission:
+      require_target_allowed: true
+      allowed_effect_risks:
+      - none
+      - read_only
+      - reversible_write
+      required_recovery_levels:
+      - rollback_and_resume
+      require_pre_commit: true
+      require_post_check: true
+      require_verifier_catalog: false
+      pre_check_timeout_ms: 1000
+      post_check_timeout_ms: 1000
+      verifier_overall_timeout_ms: 2000
+    evidence:
+      min_guarded_support: 5
+      min_enabled_support: 5
+      require_non_stale: true
+      require_family_enabled: true
+      allow_shadow: false
+      max_fallback_upper_bound: 0.1
+      max_recovery_failure_upper_bound: 0.01
+      success_metrics:
+      - p_local_success
+      - p_downstream_success
+      - p_episode_success
+      guard_overhead: 0.0
+    exploration_constraints:
+      enabled: false
+      probe_rate: 0.0
+      allowed_effect_risks:
+      - read_only
+    utility_weights:
+      success: 1.0
+      fallback: 0.5
+      overhead: 0.1
+  tool_policy:
+    policy_id: tool-policy
+    version: v1
+    allowed_tools:
+    - bash
+    tools:
+      bash:
+        required_argument_paths:
+        - command
+        non_empty_string_paths:
+        - command
+        allowed_argument_keys:
+        - command
+        max_argument_bytes: 65536
+        result:
+          accepted_statuses:
+          - success
+          accepted_returncodes:
+          - null
+          - 0
+  policy:
+    correctness_lower_bound: 0.95
+    risk_upper_bound: 0.01
+    budget:
+      max_cost: 100.0
+      max_latency_ms: 120000.0
+    utility_weights:
+      cost: 1.0
+      latency: 1.0
+      risk: 1.0
+    conservative_prior:
+      p_unsafe: 0.5
+      p_episode_success: 0.5
+      expected_cost: 0.5
+      expected_latency_ms: 500.0
+  classifier:
+    model_path: router/artifact/l2_add4_twostage_logit.json
+    threshold: 0.3575448512725272
+  m4_memory:
+    enabled: false
+    path: m4.sqlite3
+    class_count: 5
+    embedding_dimension: 52
+    max_records_per_class: 200
+    max_records_total: 2000
+    top_k: 5
+    ollama_base_url: http://127.0.0.1:11434
+    embedding_model: qwen3-embedding:0.6b
+    embedding_timeout_seconds: 30
+    embedding_mode: m1_online
+    memory_guard_threshold: 0.8
+    guard_enabled: true
+    template_version: span-embed-v2
+  l2_v4:
+    enabled: false
+    model_path: classfierTrain/out/router/l2_new_v4_mlp64x32.json
+    threshold: 0.52
+  l2_add4:
+    enabled: true
+    model_path: router/artifact/l2_add4_twostage_logit.json
+workload:
+  benchmark:
+    dataset: test_normal
+evaluation:
+  workflow_noninferiority_epsilon: 0.05
+  unsafe_episode_upper_bound_delta: 0.05

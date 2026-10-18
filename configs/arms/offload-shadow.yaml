@@ -1,0 +1,78 @@
+pilot:
+  id: traceoffload-shadow
+  schema_version: '1.0'
+  arm: appworld-traceoffload
+  traceoffload: disabled
+agent:
+  step_limit: 40
+  cost_limit: 100.0
+models:
+  large:
+    provider: openai_compatible_vllm
+    model_id: Qwen3.8-27B
+    client_model: openai/Qwen3.8-27B
+    served_model_name: Qwen3.8-27B
+    api_base: http://127.0.0.1:8300/v1
+    api_key: dummy
+    request_kwargs:
+      drop_params: true
+      parallel_tool_calls: true
+      temperature: 0.0
+      top_p: 1.0
+      seed: 42
+      max_tokens: 8192
+    send_tool_choice: false
+  small:
+    provider: openai_compatible_vllm
+    model_id: Qwen3.5-9B
+    client_model: openai/Qwen3.5-9B
+    served_model_name: Qwen3.5-9B
+    api_base: http://127.0.0.1:8800/v1
+    api_key: dummy
+    request_kwargs:
+      drop_params: true
+      parallel_tool_calls: true
+      temperature: 0.0
+      top_p: 1.0
+      seed: 42
+      max_tokens: 8192
+    send_tool_choice: false
+  decoding:
+    temperature: 0.0
+    top_p: 1.0
+    seed: 42
+    max_output_tokens: 8192
+runner:
+  classifier:
+    model_path: router/artifact/l2_add4_twostage_logit.json
+    threshold: 0.3575448512725272
+  m4_memory:
+    enabled: false
+    path: m4.sqlite3
+    class_count: 5
+    embedding_dimension: 52
+    max_records_per_class: 200
+    max_records_total: 2000
+    top_k: 5
+    ollama_base_url: http://127.0.0.1:11434
+    embedding_model: qwen3-embedding:0.6b
+    embedding_timeout_seconds: 30
+    embedding_mode: m1_online
+    memory_guard_threshold: 0.8
+    guard_enabled: true
+    template_version: span-embed-v2
+  l2_v4:
+    enabled: false
+    model_path: classfierTrain/out/router/l2_new_v4_mlp64x32.json
+    threshold: 0.52
+  l2_add4:
+    enabled: true
+    model_path: router/artifact/l2_add4_twostage_logit.json
+  history_store:
+    backend: sqlite
+    modes:
+    - classifier_route
+    path: history.sqlite3
+  shadow_route:
+    enabled: true
+    force_target: large
