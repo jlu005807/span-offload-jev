@@ -16,6 +16,8 @@ dependencies = [
 [project.optional-dependencies]
 # 离线链路（router/）：训练与阈值挑选
 router = ["scikit-learn>=1.4"]
+# JEV native System One client; imported lazily so the disabled path stays light.
+jev = ["httpx>=0.27"]
 dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]

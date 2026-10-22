@@ -20,11 +20,12 @@ import os
 import sys
 import tempfile
 import traceback
+from functools import wraps
 from datetime import timedelta
 from pathlib import Path
 from time import perf_counter as _perf_counter
 from types import MethodType
-from typing import Any
+from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -32,7 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import yaml  # noqa: E402
 
-from traceoffload.clock import real_utcnow  # noqa: E402
+from traceoffload.clock import real_time, real_utcnow  # noqa: E402
 from traceoffload.config import load_env_file  # noqa: E402
 from traceoffload.contracts import (  # noqa: E402
     AllowedTargets,
@@ -480,6 +481,41 @@ class _GatewayMeter:
         }
 
 
+def _jev_task_lifecycle(method):
+    """Finalize optional Jev evidence on both returned and raised task failures."""
+    @wraps(method)
+    def run(self, task_id):
+        if getattr(self, "_jev_config", None) is None:
+            return method(self, task_id)
+        self._jev_task_workflow_id = None
+        row = None
+        started = real_time()
+        try:
+            row = method(self, task_id)
+        except Exception as error:
+            traceback.print_exc()
+            workflow = self._jev_task_workflow_id
+            row = _failure_row(
+                instance_id=task_id, mode=self._mode,
+                agent_type=getattr(self, "_appworld_agent_type", "unknown"),
+                workflow_run_id=workflow or f"initialization-{task_id}",
+                e2e_wall_clock_ms=max(0, round((real_time() - started) * 1000)), error=error,
+            )
+            if workflow:
+                self._workflow_rows[workflow] = row
+        finally:
+            workflow = self._jev_task_workflow_id
+            if workflow:
+                try:
+                    if row is not None:
+                        self._finalize_jev_task(workflow, row)
+                finally:
+                    self._clear_jev_workflow(workflow)
+            self._jev_task_workflow_id = None
+        return row
+    return run
+
+
 class AppWorldPilotRunner(PilotRunner):
     """PilotRunner with AppWorld Simplified model/environment hooks."""
 
@@ -492,6 +528,7 @@ class AppWorldPilotRunner(PilotRunner):
         task_ids: list[str],
         output_dir: Path | str,
         experiment_name: str | None = None,
+        jev_input_preflight: Callable[[dict[str, Any]], int] | None = None,
     ) -> None:
         os.environ.setdefault("MODEL_SERVER_URL", "")
         os.environ.setdefault("OPENAI_API_KEY", "dummy")
@@ -563,6 +600,7 @@ class AppWorldPilotRunner(PilotRunner):
             #
             # 见 `traceoffload/clock.py:real_utcnow` 与 `tests/test_real_utcnow.py`。
             clock=real_utcnow,
+            jev_input_preflight=jev_input_preflight,
         )
         self._appworld_agent_config = _build_agent_config(
             self._appworld_raw_config,
@@ -661,10 +699,11 @@ class AppWorldPilotRunner(PilotRunner):
             # 算的是 span 向量，v4 预测器读的就是它。M4 关掉时预测器还得活着。
             # 用基类的谓词，别再复刻一遍条件（复刻就会漂）。
             profile_observer=(
-                self._observe_m4_profile if self._m1_embedding_needed() else None
+                self._observe_profile if self._profile_observer_needed() else None
             ),
         )
 
+    @_jev_task_lifecycle
     def run_task(self, task_id: str) -> dict[str, Any]:
         _ensure_appworld_agents_importable()
         # T2 计数活在 runner 上、而一个进程顺序跑多个任务 ⇒ **本行快照含前面任务的量**。
@@ -698,6 +737,7 @@ class AppWorldPilotRunner(PilotRunner):
             snapshot_provider=self._snapshot_provider,
             record_lm_step_index=(self._mode == "classifier_route"),
         )
+        self._jev_task_workflow_id = runtime.workflow_run_id
         runtime.analyzer = AppWorldCodeEffectAnalyzer()
         runtime.tool_proxy = AppWorldToolProxy(runtime)
         runtime.gateway = AppWorldLanguageModelGateway(

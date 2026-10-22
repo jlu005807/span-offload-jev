@@ -209,6 +209,7 @@ class PilotRunner:
         system_template: str = "{{ task }}",
         instance_template: str = "{{ task }}",
         experiment_id: str | None = None,
+        jev_input_preflight: Callable[[dict[str, Any]], int] | None = None,
     ) -> None:
         if mode not in PILOT_MODES:
             raise ValueError(f"unknown pilot mode {mode!r}; expected one of {PILOT_MODES}")
@@ -219,10 +220,16 @@ class PilotRunner:
             self._counters = MechanismCounters()
         self._config = config
         self._mode = mode
+        # Parse the optional backend before touching legacy weights or embedding dependencies.
+        from .m2.jev.types import load_jev_config
+        self._jev_config = load_jev_config(config, mode=mode)
+        self._jev_client = self._jev_input_builder = self._jev_contexts = self._jev_audit = None
+        self._jev_task_workflow_id = None
         self._output_dir = Path(output_dir) if output_dir is not None else default_results_dir()
         self._gateway = gateway
         self._model = model
         self._env_factory = env_factory
+        self._jev_input_preflight = jev_input_preflight
         self._verifier = verifier or FakeVerifier()
         self._evaluator = evaluator or FakeEvaluator()
         self._oracle = oracle
@@ -263,6 +270,8 @@ class PilotRunner:
         self._m4_memory: M4Memory | None = None
         self._m4_memory_store: SQLiteM4MemoryStore | None = None
         self._m4_memory_worker: M4MemoryWorker | None = None
+        self._m4_worker = None  # Removed publisher; close/wait still accept its empty slot.
+        self._m1_text_builders: tuple[Any, ...] = ()
         # 嵌入链路的属性也先给兜底值：`_m1_embedding_needed()` 会在构造期被调用，
         # 而 `_l2_v4_predictor` 要到下面才赋值。没有兜底就会 AttributeError。
         self._m4_embedder: OllamaEmbeddingClient | None = None
@@ -319,6 +328,7 @@ class PilotRunner:
         l2_add4_raw = config.get("runner", {}).get("l2_add4", {})
         if (
             self._mode == "classifier_route"
+            and not (self._jev_config is not None and self._jev_config.mode == "active")
             and isinstance(l2_add4_raw, dict)
             and bool(l2_add4_raw.get("enabled", False))
         ):
@@ -446,6 +456,61 @@ class PilotRunner:
             and self._route_weights.version != expected_weights_version
         ):
             self._route_weights = None
+        self._start_jev()
+
+    def _start_jev(self) -> None:
+        if self._jev_config is None:
+            return
+        from .m2.jev.audit import JevAudit
+        from .m2.jev.client import HttpJevClient
+        from .m2.jev.input_builder import JevInputBuilder, RoutingContextStore
+        configured_models = self._config.get("models", {})
+        configured_large = configured_models.get("large", {})
+        configured_small = configured_models.get("small", {})
+        large_model_id = (
+            configured_large.get("model_id")
+            if isinstance(configured_large, dict)
+            else None
+        ) or self._large.id
+        small_model_id = (
+            configured_small.get("model_id")
+            if isinstance(configured_small, dict)
+            else None
+        ) or self._small.id
+        self._jev_input_builder = JevInputBuilder(
+            self._jev_config, large_model=str(large_model_id), small_model=str(small_model_id),
+        )
+        self._m1_text_builders += (self._jev_input_builder,)
+        self._jev_contexts = RoutingContextStore()
+        self._jev_client = HttpJevClient(
+            self._jev_config, input_preflight=self._jev_input_preflight,
+        )
+        self._jev_audit = JevAudit(
+            self._output_dir / f"routing-decisions-{self._run_nonce}.jsonl", config=self._jev_config,
+        )
+
+    def _profile_observer_needed(self) -> bool:
+        return self._jev_config is not None or self._m1_embedding_needed()
+
+    def _observe_profile(self, context, request, profile) -> None:
+        if self._jev_input_builder is not None:
+            from .m2.jev.input_builder import PreparedInput, key_for
+            try:
+                prepared = self._jev_input_builder.build(context, request, profile)
+            except Exception:
+                prepared = PreparedInput(None, getattr(context, "caller_deadline_at", None),
+                                         "input_builder_failed", {})
+            self._jev_contexts.put(key_for(context), prepared)
+        if self._m1_embedding_needed():
+            self._observe_m4_profile(context, request, profile)
+
+    def _finalize_jev_task(self, workflow_run_id: str, row: dict) -> None:
+        if self._jev_audit is not None:
+            row["jev"] = self._jev_audit.summary(workflow_run_id)
+
+    def _clear_jev_workflow(self, workflow_run_id: str) -> None:
+        if self._jev_contexts is not None:
+            self._jev_contexts.clear_workflow(workflow_run_id)
 
     def _make_history_stores(
         self,
@@ -506,6 +571,10 @@ class PilotRunner:
 
         raw = config.get("runner", {}).get("m4_memory", {})
         raw = raw if isinstance(raw, dict) else {}
+
+        if (self._jev_config is not None and self._jev_config.mode == "active"
+                and not bool(raw.get("enabled", False))):
+            return
 
         # 检索时排掉**本轮**自己的 Span（用 `self._experiment_id`）。
         # 为什么不能用 `workflow_run_id` 或 `record_id`：两者都是
@@ -569,7 +638,7 @@ class PilotRunner:
         #: 所有需要「跳过 AppWorld prompt 模板」的构建器。注入时统一遍历，
         #: **避免只记得接一个** —— 漏掉某个的话它的窗口会被 few-shot 示例填满，
         #: 而这是静默的（见 `set_skip_leading_messages` 的警告）。
-        self._m1_text_builders: tuple[Any, ...] = (
+        self._m1_text_builders += (
             self._m4_text_builder,
             self._add4_actions_text_builder,
         )
@@ -1024,12 +1093,16 @@ class PilotRunner:
         base = RuntimeProfiler(allowed_targets=allowed_targets)
         if self._mode != "classifier_route":
             return base
-        if self._l2_add4_predictor is not None:
+        names = list(self._l2_add4_predictor.prefix_features) if self._l2_add4_predictor is not None else []
+        if ((self._jev_config is not None and self._jev_config.input_mode != "context")
+                or self._m4_memory_worker is not None):
+            names.extend(name for name in ("prefix_n_A", "log_est_prompt_tokens") if name not in names)
+        if names:
             return ClassifierFeatureProfiler(
                 base,
                 AppWorldOnlineFeatureBuilder(
-                    self._l2_add4_predictor.prefix_features,
-                    feature_version="l2-add4-two-stage",
+                    names,
+                    feature_version="l2-add4-two-stage" if self._l2_add4_predictor is not None else "jev-prefix-v1",
                 ),
             )
         return base
@@ -1066,6 +1139,15 @@ class PilotRunner:
                 seed=int(raw["seed"]) if raw.get("seed") is not None else None,
             )
         if mode == "classifier_route":
+            if self._jev_config is not None:
+                from .m2.jev.router import JevRouter
+                legacy = None
+                if self._jev_config.mode == "shadow":
+                    legacy = _ClassifierRouter(self._large, self._small,
+                                               lookup=self._l2_add4_lookup, guard=self._guard)
+                return JevRouter(self._large, self._small, config=self._jev_config,
+                                 context_store=self._jev_contexts, client=self._jev_client,
+                                 audit=self._jev_audit, guard=self._guard, legacy=legacy)
             if self._l2_add4_predictor is None:
                 raise ValueError(
                     "classifier_route 需要 runner.l2_add4.enabled: true —— "
@@ -1149,6 +1231,8 @@ class PilotRunner:
     def close(self, *, drain: bool = False, timeout_seconds: float = 5.0) -> bool:
         """Stop local workers; unfinished durable jobs remain in their stores."""
 
+        if self._jev_contexts is not None:
+            self._jev_contexts.clear()
         completed = True
         if drain and self._m4_worker is not None:
             completed = self.wait_for_m4(timeout_seconds=timeout_seconds)

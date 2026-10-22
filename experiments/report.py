@@ -59,16 +59,21 @@ def latency_of(row: dict[str, Any]) -> float | None:
 
 def routed_calls(row: dict[str, Any]) -> tuple[int, int] | None:
     """(给小模型的调用数, 总调用数)。实际派发，不是预测器的意图。"""
-    by_target = row.get("framework_model_calls_by_target") or {}
-    if by_target:
-        small = int(by_target.get("small_model") or 0)
-        large = int(by_target.get("large_model") or 0)
-        return small, small + large
-    kind = row.get("model_kind")
-    if kind:
-        total = calls_of(row)
-        return (total if str(kind).lower().startswith("small") else 0), total
-    return None
+    by_target = row.get("framework_model_calls_by_target")
+    if not isinstance(by_target, dict) or not by_target:
+        # ``framework_model_calls`` is a total over all calls and is not enough
+        # to identify which model actually received them.  In particular, a
+        # Jev intent or a shadow decision is not a dispatch count.
+        return None
+    counts: dict[str, int] = {}
+    for target, value in by_target.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if value < 0 or int(value) != value:
+            return None
+        counts[str(target)] = int(value)
+    small = counts.get("small_model", counts.get("small", 0))
+    return small, sum(counts.values())
 
 
 def predicted_offloads(row: dict[str, Any]) -> int:
@@ -84,6 +89,47 @@ def predicted_offloads(row: dict[str, Any]) -> int:
     return 0
 
 
+_JEV_SUM_FIELDS = (
+    "decisions", "http_attempts", "http_successes", "http_errors",
+    "input_unavailable", "budget_unavailable", "slm_intent", "llm_intent",
+    "client_total_ms", "state_chars_total", "audit_errors",
+)
+
+
+def _optional_sum(rows: list[dict[str, Any]], key: str) -> int | float | None:
+    values = [
+        value for row in rows
+        if isinstance(row.get("jev"), dict)
+        for value in [row["jev"].get(key)]
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    ]
+    return sum(values) if values else None
+
+
+def _aggregate_jev(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    jev_rows = [row["jev"] for row in rows if isinstance(row.get("jev"), dict)]
+    if not jev_rows:
+        return None
+    result: dict[str, Any] = {}
+    for key in _JEV_SUM_FIELDS:
+        values = [value for row in jev_rows for value in [row.get(key)]
+                  if isinstance(value, (int, float)) and not isinstance(value, bool)]
+        result[key] = sum(values) if values else None
+    for key in ("mode", "input_mode"):
+        values = {row.get(key) for row in jev_rows if row.get(key) is not None}
+        result[key] = next(iter(values)) if len(values) == 1 else None
+    audits = [row.get("routing_audit_complete") for row in jev_rows
+              if isinstance(row.get("routing_audit_complete"), bool)]
+    result["routing_audit_complete"] = all(audits) if audits else None
+    attempts = result["http_attempts"]
+    result["http_failure_rate"] = (
+        result["http_errors"] / attempts
+        if isinstance(attempts, (int, float)) and attempts > 0
+        and isinstance(result["http_errors"], (int, float)) else None
+    )
+    return result
+
+
 def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(rows)
     n = len(rows)
@@ -93,21 +139,33 @@ def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     tokens = sum(float(r.get("total_tokens") or 0) for r in rows)
     calls = sum(calls_of(r) for r in rows)
     latency = [x for r in rows if (x := latency_of(r)) is not None]
-    off = 0
+    off = total_routed = 0
+    offload_missing_rows = 0
     for r in rows:
         routed = routed_calls(r)
-        if routed is not None:
-            off += routed[0]
+        if routed is None:
+            offload_missing_rows += 1
         else:
-            off += predicted_offloads(r)
+            off += routed[0]
+            total_routed += routed[1]
+    jev = _aggregate_jev(rows)
+    jev_latency = jev.get("client_total_ms") if jev else None
+    jev_failure_rate = jev.get("http_failure_rate") if jev else None
     return {
         "n": n,
         "success": success,
         "tokens": tokens,
         "calls_per_run": calls / n,
         "model_latency_s": (sum(latency) / len(latency) / 1000.0) if latency else float("nan"),
-        "offload": (off / calls) if calls else 0.0,
-        "offload_detail": f"{off}/{calls}",
+        "offload": (off / total_routed) if total_routed else None,
+        "offload_detail": f"{off}/{total_routed}" if total_routed else None,
+        "offload_missing_rows": offload_missing_rows,
+        "jev": jev,
+        "jev_routing_latency_ms": jev_latency,
+        "jev_http_failure_rate": jev_failure_rate,
+        # No cost model is part of the Jev audit contract.  Keep this explicit
+        # so consumers do not mistake a missing price for zero cost.
+        "cost": None,
     }
 
 
@@ -130,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
         wanted = set(args.arm)
         arms = [(n, p) for n, p in arms if n in wanted]
 
-    header = f"{'arm':<24}{'n':>6}{'success':>9}{'offload':>9}{'tokens':>10}{'calls/run':>11}{'latency':>10}"
+    header = f"{'arm':<24}{'n':>6}{'success':>9}{'offload':>9}{'tokens':>10}{'calls/run':>11}{'latency':>10}{'jev ms':>10}{'jev err':>10}"
     print(header)
     print("-" * len(header))
     out: dict[str, Any] = {}
@@ -139,9 +197,15 @@ def main(argv: list[str] | None = None) -> int:
         out[name] = s
         if not s["n"]:
             continue
+        offload_text = f"{100*s['offload']:.1f}%" if s["offload"] is not None else "missing"
+        jev_ms = s["jev_routing_latency_ms"]
+        jev_err = s["jev_http_failure_rate"]
+        jev_ms_text = f"{jev_ms:.1f}" if jev_ms is not None else "missing"
+        jev_err_text = f"{100*jev_err:.1f}%" if jev_err is not None else "missing"
         print(
-            f"{name:<24}{s['n']:>6}{100*s['success']:>8.1f}%{100*s['offload']:>8.1f}%"
+            f"{name:<24}{s['n']:>6}{100*s['success']:>8.1f}%{offload_text:>9}"
             f"{s['tokens']/1e6:>9.1f}M{s['calls_per_run']:>11.1f}{s['model_latency_s']:>9.1f}s"
+            f"{jev_ms_text:>10}{jev_err_text:>10}"
         )
     if args.json:
         Path(args.json).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

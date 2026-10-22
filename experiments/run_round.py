@@ -33,6 +33,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import yaml
+
 REPO = Path(__file__).resolve().parents[1]
 PY = sys.executable
 
@@ -72,6 +74,17 @@ def _load(path: Path) -> list[dict]:
     if isinstance(data, dict):
         return [data]
     return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+
+def jev_enabled_from_config(config_path: Path) -> bool:
+    """Read the batch safety switch from the arm config, never its arm name."""
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return False
+    runner = raw.get("runner") if isinstance(raw, dict) else None
+    jev = runner.get("jev") if isinstance(runner, dict) else None
+    return isinstance(jev, dict) and jev.get("enabled") is True
 
 
 def _missing_ids(out_dir: Path, ids: list[str], native: bool) -> list[str]:
@@ -137,6 +150,10 @@ def main(argv: list[str] | None = None) -> int:
     config = (REPO / "configs" / "pilot.yaml") if native else (REPO / "configs" / "arms" / f"{args.arm}.yaml")
     if not config.is_file():
         raise SystemExit(f"找不到配置 {config}")
+    jev_enabled = jev_enabled_from_config(config)
+    workers = 1 if jev_enabled else args.workers
+    if jev_enabled and args.workers != 1:
+        print(f"[{args.arm}] Jev enabled; forcing workers=1 to protect summary writes", flush=True)
 
     for k in range(1, args.rounds + 1):
         if native:
@@ -144,7 +161,11 @@ def main(argv: list[str] | None = None) -> int:
             out_dir.mkdir(parents=True, exist_ok=True)
         else:
             out_dir = arm_dir / f"r{k}"
-            out_dir.mkdir(parents=True, exist_ok=True)
+        if jev_enabled and out_dir.exists() and any(out_dir.iterdir()):
+            raise SystemExit(
+                f"Jev output directory is nonempty: {out_dir}; use a fresh output directory"
+            )
+        out_dir.mkdir(parents=True, exist_ok=True)
         root = out_dir / "_root"
         prepare_root(root)
         log = out_dir / "round.log"
@@ -172,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
         started = time.time()
         failures = []
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             for task, rc in pool.map(job, ids):
                 if rc != 0:
                     failures.append((task, rc))
@@ -180,7 +201,18 @@ def main(argv: list[str] | None = None) -> int:
         # 并发写同一张 summary 会丢行（读-改-写竞态）。这里按盘上的行补跑缺的实例，
         # **串行**补 —— 串行不会丢。
         missing = _missing_ids(out_dir, ids, native)
-        if missing:
+        if jev_enabled:
+            if missing:
+                print(
+                    f"[{args.arm} r{k}] Jev no automatic rerun; "
+                    f"missing/degraded={len(missing)} {missing[:8]}", flush=True
+                )
+            if failures:
+                print(
+                    f"[{args.arm} r{k}] Jev failures are listed only: "
+                    f"{[task for task, _ in failures][:8]}", flush=True
+                )
+        elif missing:
             print(f"[{args.arm} r{k}] 补跑 {len(missing)} 个缺行（串行）", flush=True)
             for task in missing:
                 job(task)
