@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -154,6 +155,9 @@ def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     return {
         "n": n,
         "success": success,
+        "task_failures_by_reason": dict(Counter(
+            row.get("task_failure_reason") or ("runtime_error" if row.get("failure") else "evaluation_failed")
+            for row in rows if row.get("task_success") is not True)),
         "tokens": tokens,
         "calls_per_run": calls / n,
         "model_latency_s": (sum(latency) / len(latency) / 1000.0) if latency else float("nan"),
