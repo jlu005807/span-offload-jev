@@ -1,0 +1,24 @@
+{
+  "receipt_type": "local_code_acceptance_for_server_smoke",
+  "ready_for_server_smoke": true,
+  "scope": "Six-arm holdout comparison with Jev threshold 0.50 added. Local checks only; not evidence of server smoke or experiment completion.",
+  "local_verification": {
+    "test_compare_routers": "19 passed",
+    "sbatch_bash_syntax": "passed",
+    "embedded_python_syntax": "2 blocks compiled",
+    "holdout_manifest": "20 unique tasks; local data present; no overlap with prior 90 task families"
+  },
+  "sha256": {
+    "experiments/compare_routers.py": "f30beb94b0b29a393ce833df668b5a39dedd74596726d715f19418aad3e7b5c9",
+    "experiments/run_native.py": "4f112e2cf4892b7b18f0b54e428e1b736739e0c3aed452cfa98d25cc0228e964",
+    "experiments/run_appworld.py": "408ba25c644dfcc3a292251b68627d7c26d118dd258728feb228125dc2e20fd7",
+    "experiments/task_outcomes.py": "56c9d63a698c80b619a802812666df949a8660f30512e8f605206f800da1742d",
+    "traceoffload/runner.py": "e66469651236547335cfac0c7442fa112cf314234c72d419e69563d550907072",
+    "traceoffload/m1/embedding_client.py": "1be978eae9d27d0c8093a017d87699fb07e483ee0ae665e61820404be726e4ae",
+    "traceoffload/m2/jev/input_builder.py": "7e902e2e17e60f37697fc0d719adefe25ca0cc45053c0d9f6da27ba0916fb9cc",
+    "router/artifact/l2_add4_twostage_logit.json": "0d0b15b24882204a0830028e32ca18c57d9c5a048dcdcb2d73bb5418baf23406",
+    "experiments/instances-jev-holdout-20.txt": "2949cb026009a764514f7c61fbd45e9a382b8fa2b588dc86f1976549b5af737b",
+    "runs/setup/four-features-config.yaml": "ce94c1400cff978421cc5232fbd10aceede60cce66012c4f3886355fbee5ceaf",
+    "deploy/jev/router_comparison.sbatch": "3a627493e3b10cdd5948e375048e4a5bd1d48785c06a41a2371f6dafc52c228b"
+  }
+}

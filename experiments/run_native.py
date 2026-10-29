@@ -58,7 +58,7 @@ from experiments.task_outcomes import observe_termination, finalize_task_outcome
 
 from traceoffload.config import load_env_file  # noqa: E402
 
-from run_appworld import (  # noqa: E402
+from experiments.run_appworld import (  # noqa: E402
     _build_agent_config,
     _build_language_model_config,
     _ensure_appworld_agents_importable,
@@ -197,6 +197,9 @@ def run_native_task(
     # a key.  The TraceOffload entry point sets this too; the native baseline
     # has to mirror it or the agent never gets built.
     os.environ.setdefault("OPENAI_API_KEY", "dummy")
+    # AppWorld reads this even when base_url is already an absolute URL.
+    # Initialize here too: comparison workers bypass the CLI main().
+    os.environ.setdefault("MODEL_SERVER_URL", "")
     _ensure_appworld_agents_importable()
     from appworld import AppWorld
     from appworld_agents.code.simplified.agent import Agent
