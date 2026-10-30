@@ -331,6 +331,27 @@ def test_v1_profiles_are_single_threshold_context_groups(monkeypatch):
     assert configs["jev_v1_t50"]["runner"]["m4_memory"]["guard_enabled"] is True
 
 
+@pytest.mark.parametrize("profile,group,version,threshold", [
+    ("v2-t50", "jev_v2_t50", "v2", .5),
+    ("v2-t60", "jev_v2_t60", "v2", .6),
+    ("v2-t70", "jev_v2_t70", "v2", .7),
+    ("v3-t50", "jev_v3_t50", "v3", .5),
+    ("v3-t60", "jev_v3_t60", "v3", .6),
+    ("v3-t70", "jev_v3_t70", "v3", .7),
+])
+def test_prompt_threshold_profiles_select_version_and_threshold(monkeypatch, profile, group,
+                                                                  version, threshold):
+    monkeypatch.setenv("JEV_COMPARE_PROFILE", profile)
+    mod = module()
+    prepared = mod.build_configs(config())
+    assert mod.active_groups() == (group,)
+    jev = prepared[group]["runner"]["jev"]
+    assert jev["prompt_version"] == version
+    assert jev["threshold"] == threshold
+    assert jev["input_mode"] == "context"
+    assert mod._context_prompt_sha256(version) != mod._context_prompt_sha256("v1")
+
+
 def test_v1_profiles_require_33_dev_tasks_and_record_metadata(monkeypatch, tmp_path):
     monkeypatch.setenv("JEV_COMPARE_PROFILE", "v1-t60")
     mod = module()

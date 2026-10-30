@@ -1,25 +1,26 @@
 {
-  "receipt_type": "local_code_acceptance_for_v1_validation_server_smoke",
+  "receipt_type": "local_code_acceptance_for_context_prompt_validation_server_smoke",
   "ready_for_server_smoke": true,
-  "scope": "V1 current context prompt, fixed 33-task project validation manifest, thresholds 0.50/0.60/0.70. Local code acceptance only; server verifies AppWorld task availability and no exact-ID overlap with the 90-task test manifest.",
+  "scope": "V1/V2/V3 context prompt versions with identical context and Choice criteria, fixed 33-task project validation manifest, thresholds 0.50/0.60/0.70. V1 defaults remain unchanged. Local code acceptance only; server verifies AppWorld task availability and no exact-ID overlap with the 90-task test manifest.",
   "local_verification": {
-    "test_compare_routers": "23 passed",
-    "test_contracts_and_appworld_goal": "included; combined 36 passed",
+    "test_compare_routers_and_jev_input": "71 passed",
+    "test_contracts_and_appworld_goal": "included",
     "manifest": "33 unique IDs exactly match docs/DATA.md validation set; zero exact-ID overlap with experiments/instances-90.txt",
     "sbatch_bash_syntax": "passed",
     "python_compile": "passed",
     "git_diff_check": "passed"
   },
   "sha256": {
-    "experiments/compare_routers.py": "6cf3fcda55282906df57fa0fc68d7c06cea82b8a46e22140581aa073b8583e1d",
+    "experiments/compare_routers.py": "4d46c688cfbd05693aef36e18002843d79a3b79f26851d4cf315aa9b9a0de8e3",
     "experiments/run_native.py": "4f112e2cf4892b7b18f0b54e428e1b736739e0c3aed452cfa98d25cc0228e964",
     "experiments/run_appworld.py": "817d53f5342527fb878a2509b6464e22859fd164d9a61570b637b35a73816a12",
     "experiments/task_outcomes.py": "56c9d63a698c80b619a802812666df949a8660f30512e8f605206f800da1742d",
     "traceoffload/runner.py": "e66469651236547335cfac0c7442fa112cf314234c72d419e69563d550907072",
     "traceoffload/m1/embedding_client.py": "1be978eae9d27d0c8093a017d87699fb07e483ee0ae665e61820404be726e4ae",
-    "traceoffload/m2/jev/input_builder.py": "05366a7c82d6a70f4531cb5fd8bfb24d98c8a6ab64b67ccb21593865f714d70a",
+    "traceoffload/m2/jev/input_builder.py": "b455984c654594ea1a6f214fdf73520eb08f08ab0d9fa7e706724db72b44f62f",
+    "traceoffload/m2/jev/types.py": "f252b417524902192c273092a38bdffb49d43d1360a5f8b96c2e112f41636281",
     "router/artifact/l2_add4_twostage_logit.json": "0d0b15b24882204a0830028e32ca18c57d9c5a048dcdcb2d73bb5418baf23406",
-    "deploy/jev/router_comparison.sbatch": "318930d860eae0cb7d5b4239bd57bdb6b655c90329a5c7c6673e7979a2801262",
+    "deploy/jev/router_comparison.sbatch": "79ddb97796c7ebbb20d37c24237da7f447a9f113f91d6efc283704e8891fd769",
     "experiments/instances-jev-v1-validation-33.txt": "6df01b12db6973d31c239f016363e9076d03cd1365b629ef6f36e7383b8a2d69"
   }
 }

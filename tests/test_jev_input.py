@@ -99,6 +99,24 @@ def test_modes_send_one_shared_question_and_actual_executor_identities(mode, par
         assert prepared.metadata["prompt_version"] == _module().PROMPT_VERSION
 
 
+@pytest.mark.parametrize("version,expected_constant", [
+    ("v1", "ROUTE_CONTEXT_INSTRUCTIONS_V3"),
+    ("v2", "ROUTE_CONTEXT_INSTRUCTIONS_V2_BALANCED"),
+    ("v3", "ROUTE_CONTEXT_INSTRUCTIONS_V3_PROACTIVE"),
+])
+def test_context_prompt_versions_keep_choice_criteria_identical(version, expected_constant):
+    module = _module()
+    prepared = _builder(prompt_version=version).build(
+        _context(), _request(_msg("user", "Begin")), _profile())
+    question = prepared.request["questions"]["route"]
+    assert question["instructions"] == getattr(module, expected_constant)
+    assert question["criteria"] == dict(module.ROUTE_CRITERIA_V2)
+    assert prepared.metadata["prompt_version"] == module.CONTEXT_PROMPT_VERSIONS[version][1]
+    assert prepared.metadata["prompt_sha256"] == sha256(_json({
+        "instructions": question["instructions"], "criteria": question["criteria"]
+    }).encode()).hexdigest()
+
+
 def test_four_features_reuses_both_existing_text_recipes_and_ignores_extra_observations():
     context, profile = _context(), _profile()
     request = _request(_msg("assistant", "fewshot"), _msg("user", "fewshot output"),

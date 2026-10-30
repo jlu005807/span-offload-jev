@@ -148,10 +148,19 @@ with httpx.Client(trust_env=False,timeout=10) as h:
 print('ALL_SERVICES_WARMED', flush=True)
 PY
 
-for profile in v1-t50 v1-t60 v1-t70; do
-  export JEV_COMPARE_PROFILE="$profile"
-  export JEV_COMPARE_OUTPUT="$JEV_COMPARE_SESSION/$profile/comparison"
-  mkdir -p "$JEV_COMPARE_SESSION/$profile"
-  .venv/bin/python -u -m experiments.compare_routers
-  cp "$JEV_COMPARE_OUTPUT/report.json" "$JEV_COMPARE_SESSION/$profile-report.json"
+PROMPT_VERSIONS="${JEV_PROMPT_VERSIONS:-v1}"
+IFS=':' read -r -a prompt_versions <<< "$PROMPT_VERSIONS"
+for prompt_version in "${prompt_versions[@]}"; do
+  case "$prompt_version" in
+    v1|v2|v3) ;;
+    *) echo "Unsupported prompt version: $prompt_version" >&2; exit 2 ;;
+  esac
+  for threshold in t50 t60 t70; do
+    profile="$prompt_version-$threshold"
+    export JEV_COMPARE_PROFILE="$profile"
+    export JEV_COMPARE_OUTPUT="$JEV_COMPARE_SESSION/$profile/comparison"
+    mkdir -p "$JEV_COMPARE_SESSION/$profile"
+    .venv/bin/python -u -m experiments.compare_routers
+    cp "$JEV_COMPARE_OUTPUT/report.json" "$JEV_COMPARE_SESSION/$profile-report.json"
+  done
 done

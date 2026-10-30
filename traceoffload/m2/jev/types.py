@@ -32,6 +32,7 @@ class JevConfig:
     api_key_env: str | None = None
     mode: Literal["shadow", "active"] = "shadow"
     input_mode: Literal["context", "four_features", "combined"] = "combined"
+    prompt_version: Literal["v1", "v2", "v3"] = "v1"
     threshold: float = 0.8
     request_timeout_ms: int = 2000
     connect_timeout_ms: int = 500
@@ -109,10 +110,13 @@ def load_jev_config(full_config: dict, *, mode: str) -> JevConfig | None:
         raise ValueError("runner.jev contains unknown settings")
     jev_mode = raw.get("mode", "shadow")
     input_mode = raw.get("input_mode", "combined")
+    prompt_version = raw.get("prompt_version", "v1")
     if jev_mode not in ("active", "shadow"):
         raise ValueError("runner.jev.mode must be shadow or active")
     if input_mode not in ("context", "four_features", "combined"):
         raise ValueError("runner.jev.input_mode must be context, four_features or combined")
+    if prompt_version not in ("v1", "v2", "v3"):
+        raise ValueError("runner.jev.prompt_version must be v1, v2 or v3")
     if jev_mode == "shadow" and not _enabled(_mapping(runner.get("l2_add4", {}), "runner.l2_add4"), "runner.l2_add4"):
         raise ValueError("Jev shadow requires runner.l2_add4.enabled=true")
     if _enabled(_mapping(runner.get("shadow_route", {}), "runner.shadow_route"), "runner.shadow_route"):

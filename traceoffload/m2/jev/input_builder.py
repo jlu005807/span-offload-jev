@@ -44,6 +44,58 @@ Boundaries:
 3. A write operation does not automatically require the large model; actions still go through the existing execution guard.
 4. The guard and large-model fallback do not guarantee task success and cannot replace this reliability judgment.
 5. Choose LLM when there is not enough evidence to confidently route to SLM."""
+ROUTE_CONTEXT_INSTRUCTIONS_V2_BALANCED = """Your objective is to balance reliable task execution with efficient model utilization.
+
+For each call, assess whether the designated small model is reasonably likely to complete the next step successfully, based on the task requirements, available context, and the capabilities specified for that model.
+
+Prefer the SLM when the task is sufficiently specified and the SLM is reasonably capable of handling the required operation. Do not require absolute certainty or unusually strong evidence before selecting the SLM.
+
+Consider the complexity and uncertainty of the actual next call rather than judging the entire task. A complex overall task may contain individual steps that are straightforward and suitable for the SLM.
+
+Choose the LLM when the next call involves substantial ambiguity, complex reasoning, interacting constraints, critical information integration, or error recovery that makes the SLM meaningfully less likely to succeed.
+
+Do not route to the LLM merely because it may be more capable in general. Use the LLM when its additional capability is relevant to the requirements of the current call.
+
+Treat computational cost as an important consideration when the SLM is a reasonable choice. When the SLM is likely to handle the call successfully, prefer it rather than using the LLM solely for additional assurance.
+
+Do not assume capabilities or information that are not specified or available. Do not treat the presence of a guard or fallback as a substitute for evaluating the SLM's suitability.
+
+Your responsibility is to select the most appropriate model for the next call, balancing execution reliability and model efficiency. Do not execute the task itself."""
+ROUTE_CONTEXT_INSTRUCTIONS_V3_PROACTIVE = """Your objective is to maximize the use of the designated small model while maintaining acceptable task execution reliability.
+
+Adopt an SLM-first routing strategy. When the next call has a clear objective, sufficient supporting information, and requirements within the SLM's reasonable capabilities, choose the SLM.
+
+Do not require strong evidence that the SLM will perform as well as the LLM. The relevant question is whether the SLM is sufficiently capable of completing the current call, not whether the LLM might perform better.
+
+Do not treat code generation, tool calls, API usage, parameter selection, or write operations as automatic reasons to choose the LLM. These are task characteristics, not evidence that the SLM is incapable.
+
+In particular, prefer the SLM for:
+- Well-specified code generation or code modification.
+- Structured parameter selection and argument construction.
+- Tool and API calls with clear operations and available arguments.
+- Information extraction, data transformation, and routine reasoning.
+- Explicitly bounded write operations that do not require substantial planning.
+
+Choose the LLM when there is a concrete reason to believe that the current call exceeds the SLM's capabilities or cannot be handled reliably with the available information. Such reasons include:
+- Complex multi-step planning with dependent decisions.
+- Multiple interacting constraints requiring careful prioritization.
+- Integrating critical information across multiple sources or resolving conflicting evidence.
+- Significant ambiguity or missing information that prevents a sound decision.
+- Unexpected execution outcomes requiring substantial error recovery or replanning.
+- Reasoning demands that clearly exceed the SLM's reasonable capabilities.
+
+Evaluate only the next model call, not the apparent complexity of the entire task. Do not escalate to the LLM simply because a task belongs to a traditionally difficult category.
+
+Use the LLM when its additional reasoning capability is genuinely needed. Otherwise, prefer the SLM and avoid unnecessary escalation.
+
+Use only the information actually provided and do not invent model capabilities or missing information. Existing execution guards and fallback mechanisms do not replace this routing decision.
+
+Your responsibility is to offload as many suitable calls as reasonably possible to the SLM without forcing it to handle calls beyond its capabilities. Do not execute the task itself."""
+CONTEXT_PROMPT_VERSIONS = {
+    "v1": (ROUTE_CONTEXT_INSTRUCTIONS_V3, CONTEXT_PROMPT_VERSION),
+    "v2": (ROUTE_CONTEXT_INSTRUCTIONS_V2_BALANCED, "context_route_v2_en"),
+    "v3": (ROUTE_CONTEXT_INSTRUCTIONS_V3_PROACTIVE, "context_route_v3_proactive_en"),
+}
 ROUTE_INSTRUCTIONS_V2 = """You are a model-routing specialist for an Agent system.
 Your task is to decide whether the next model call should be routed to model_info.small_model.
 
@@ -144,9 +196,14 @@ class JevInputBuilder:
 
     def build(self, context: Any, request: Any, profile: Any) -> PreparedInput:
         mode = self._config.input_mode
-        instructions = (ROUTE_CONTEXT_INSTRUCTIONS_V3 if mode == "context"
-                        else ROUTE_INSTRUCTIONS_V2)
-        prompt_version = (CONTEXT_PROMPT_VERSION if mode == "context" else PROMPT_VERSION)
+        if mode == "context":
+            try:
+                instructions, prompt_version = CONTEXT_PROMPT_VERSIONS[
+                    getattr(self._config, "prompt_version", "v1")]
+            except KeyError:
+                raise ValueError("runner.jev.prompt_version must be v1, v2 or v3") from None
+        else:
+            instructions, prompt_version = ROUTE_INSTRUCTIONS_V2, PROMPT_VERSION
         deadline = getattr(context, "caller_deadline_at", None)
         if not isinstance(deadline, datetime) or deadline.tzinfo is None:
             deadline = None
@@ -293,4 +350,6 @@ class JevInputBuilder:
 
 __all__ = ["JevInputBuilder", "PreparedInput", "RoutingContextStore", "key_for",
            "ROUTE_CONTEXT_INSTRUCTIONS_V3", "ROUTE_INSTRUCTIONS_V2",
-           "ROUTE_CRITERIA_V2", "PROMPT_VERSION", "CONTEXT_PROMPT_VERSION"]
+           "ROUTE_CONTEXT_INSTRUCTIONS_V2_BALANCED", "ROUTE_CONTEXT_INSTRUCTIONS_V3_PROACTIVE",
+           "ROUTE_CRITERIA_V2", "PROMPT_VERSION", "CONTEXT_PROMPT_VERSION",
+           "CONTEXT_PROMPT_VERSIONS"]
