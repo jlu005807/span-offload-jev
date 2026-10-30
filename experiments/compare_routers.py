@@ -17,7 +17,17 @@ import yaml
 GROUPS = ("native", "legacy", "jev08", "jev07")
 HOLDOUT_GROUPS = ("native", "legacy", "jev050", "jev065", "jev070", "jev075")
 THRESHOLDS = {"jev08": .8, "jev07": .7, "jev050": .5, "jev055": .55, "jev060": .6,
-              "jev065": .65, "jev070": .7, "jev075": .75}
+              "jev065": .65, "jev070": .7, "jev075": .75,
+              "jev_v1_t50": .5, "jev_v1_t60": .6, "jev_v1_t70": .7}
+V1_PROFILES = {
+    "v1-t50": ("jev_v1_t50", "V1-T50"),
+    "v1-t60": ("jev_v1_t60", "V1-T60"),
+    "v1-t70": ("jev_v1_t70", "V1-T70"),
+}
+V1_COST_PER_MILLION = {
+    "large_model": {"in": .35, "out": 2.55},
+    "small_model": {"in": .10, "out": .15},
+}
 
 
 def active_groups(profile=None):
@@ -28,6 +38,8 @@ def active_groups(profile=None):
         return ("jev055", "jev060", "jev065", "jev075")
     if profile == "holdout":
         return HOLDOUT_GROUPS
+    if profile in V1_PROFILES:
+        return (V1_PROFILES[profile][0],)
     raise ValueError("Unknown JEV_COMPARE_PROFILE: " + profile)
 
 
@@ -53,6 +65,8 @@ def build_configs(raw, *, groups=None):
         if group.startswith("jev"):
             runner["jev"].update(enabled=True, mode="active", input_mode="context",
                                  threshold=THRESHOLDS[group])
+            if group in {item[0] for item in V1_PROFILES.values()}:
+                runner.setdefault("m4_memory", {})["guard_enabled"] = True
         else:
             runner["jev"] = {"enabled": False}
         configs[group] = config
@@ -91,7 +105,36 @@ def acceptance_errors(group, row):
         if (not block.get("http_successes") or block.get("routing_audit_complete") is not True or
                 block.get("input_mode") != "context" or block.get("threshold") != (THRESHOLDS[group])):
             errors.append("jev_instrumentation_unavailable")
+        if group in {item[0] for item in V1_PROFILES.values()}:
+            audit = row.get("jev_audit") or {}
+            if audit.get("prompt_sha256") != _context_prompt_sha256():
+                errors.append("jev_prompt_hash_mismatch")
     return errors
+
+
+def _estimated_execution_cost_usd(row):
+    by_target = row.get("framework_tokens_by_target_io") or {}
+    if not by_target:
+        return None
+    total = 0.0
+    for target, prices in V1_COST_PER_MILLION.items():
+        io = by_target.get(target) or {}
+        if io and any(type(io.get(kind)) is not int or io[kind] < 0 for kind in prices):
+            return None
+        total += sum((io.get(kind, 0) or 0) * price
+                     for kind, price in prices.items()) / 1_000_000
+    return round(total, 10)
+
+
+def _context_prompt_sha256():
+    from traceoffload.m2.jev.input_builder import (
+        ROUTE_CONTEXT_INSTRUCTIONS_V3,
+        ROUTE_CRITERIA_V2,
+    )
+    body = {"instructions": ROUTE_CONTEXT_INSTRUCTIONS_V3,
+            "criteria": dict(ROUTE_CRITERIA_V2)}
+    return sha256(json.dumps(body, ensure_ascii=False, separators=(",", ":"),
+                            allow_nan=False).encode("utf-8")).hexdigest()
 
 
 def summarize(rows, *, groups=None, profile=None):
@@ -132,6 +175,13 @@ def summarize(rows, *, groups=None, profile=None):
             "jev_client_total_ms": sum((r.get("jev") or {}).get("client_total_ms", 0) for r in items),
             "wall_clock_ms": sum(r.get("e2e_wall_clock_ms") or 0 for r in items),
             "worker_wall_clock_ms": sum(r.get("worker_wall_clock_ms") or 0 for r in items),
+            "estimated_execution_cost_usd": (
+                round(sum(r["estimated_execution_cost_usd"] for r in items), 10)
+                if items and all(type(r.get("estimated_execution_cost_usd")) in (int, float)
+                                 for r in items) else None
+            ) if group_name in {item[0] for item in V1_PROFILES.values()} else None,
+            "tasks_with_known_cost": sum(type(r.get("estimated_execution_cost_usd")) in (int, float)
+                                         for r in items),
             "invalid_measurement_tasks": sum(r.get("valid_for_comparison") is False for r in items),
             "paired_with_native": {"tasks": len(paired),
                 "both_success": sum(r["task_success"] and native[r["instance_id"]] for r in paired),
@@ -192,7 +242,8 @@ def execute_cell(group, config, task, output, experiment, split):
     return row
 
 
-def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, task_splits=None):
+def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, task_splits=None,
+                   smoke_task=None):
     if not tasks or len(tasks) != len(set(tasks)):
         raise ValueError("Task list must be nonempty and unique")
     output = Path(output)
@@ -200,10 +251,17 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
         raise FileExistsError(output)
     profile = os.environ.get("JEV_COMPARE_PROFILE", "baseline")
     groups = active_groups(profile)
+    is_v1_profile = profile in V1_PROFILES
+    if is_v1_profile and len(tasks) != 33:
+        raise ValueError("V1 threshold runs require exactly 33 validation tasks")
     configs = build_configs(raw, groups=groups)
     health = health or check_services
-    if task_splits is None or any(t not in task_splits for t in [*tasks, "099174d_1"]):
+    smoke_task = smoke_task or (tasks[0] if is_v1_profile else "099174d_1")
+    if task_splits is None or any(t not in task_splits for t in [*tasks, smoke_task]):
         raise ValueError("Official dataset split required for every task")
+    if is_v1_profile and (any(task_splits[t] != "dev" for t in tasks)
+                          or task_splits[smoke_task] != "dev"):
+        raise ValueError("V1 threshold runs may use only AppWorld dev tasks")
     output.mkdir(parents=True)
     config_paths, hashes = {}, {}
     for group, config in configs.items():
@@ -212,10 +270,21 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
         config_paths[group] = f
         hashes[group] = sha256(f.read_bytes()).hexdigest()
     run_id = uuid4().hex
+    commit_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True, cwd=Path(__file__).resolve().parents[1]
+    ).strip()
     write_json(output / "manifest.json", {"task_ids": tasks, "task_splits": task_splits,
         "groups": groups, "experiment_profile": profile,
-        "holdout_evaluation": profile == "holdout", "config_sha256": hashes, "run_id": run_id,
-        "order": "rotate groups by task index", "development_experiment": profile != "holdout"})
+        "experiment_group_id": V1_PROFILES[profile][1] if is_v1_profile else None,
+        "run_id": run_id, "git_commit_sha": commit_sha,
+        "prompt_sha256": _context_prompt_sha256() if is_v1_profile else None,
+        "price_table_version": "openrouter-2026-10" if is_v1_profile else None,
+        "cost_basis": ("Execution-model estimate from token counts at openrouter-2026-10 list prices; "
+                       "no cache discount; excludes Jev service cost") if is_v1_profile else None,
+        "holdout_evaluation": profile == "holdout", "config_sha256": hashes,
+        "smoke_task_id": smoke_task, "smoke_excluded_from_formal_results": True,
+        "order": "single threshold group, manifest order",
+        "development_experiment": profile != "holdout"})
     rows, smoke, completed = [], [], set()
     def run(stage, task, group):
         row = execute(group, config_paths[group], task, output/stage/group/task,
@@ -223,13 +292,19 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
         if row.get("instance_id") != task:
             raise RuntimeError("Worker returned wrong task identity")
         errors = acceptance_errors(group, row)
-        row.update(group=group, stage=stage, valid_for_comparison=not errors,
+        row.update(group=group, stage=stage, run_id=run_id, git_commit_sha=commit_sha,
+                   valid_for_comparison=not errors,
                    measurement_errors=errors, config_sha256=hashes[group])
+        if is_v1_profile:
+            row["experiment_group_id"] = V1_PROFILES[profile][1]
+            row["prompt_sha256"] = (row.get("jev_audit") or {}).get("prompt_sha256")
+            row["price_table_version"] = "openrouter-2026-10"
+            row["estimated_execution_cost_usd"] = _estimated_execution_cost_usd(row)
         return row
     try:
         health(configs[next(g for g in configs if g.startswith("jev"))])
         for group in groups:
-            smoke.append(run("smoke", "099174d_1", group))
+            smoke.append(run("smoke", smoke_task, group))
             write_json(output / "smoke-results.json", smoke)
         errors = {r["group"]: r["measurement_errors"] for r in smoke if r["measurement_errors"]}
         write_json(output / "acceptance.json", {"ready_for_batch": not errors, "errors": errors,
@@ -237,9 +312,9 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
                                                "config_sha256": hashes})
         if errors:
             raise RuntimeError("Router comparison integration acceptance failed")
-        for index, task in enumerate(tasks):
+        for task_index, task in enumerate(tasks):
             health(configs[next(g for g in configs if g.startswith("jev"))])
-            offset = index % len(groups)
+            offset = task_index % len(groups)
             order = groups[offset:] + groups[:offset]
             for group in order:
                 row = run("batch", task, group)
@@ -266,6 +341,7 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
 
 def audit_usage(output, *, tolerate_partial=False):
     count, tokens, probabilities = 0, 0, []
+    prompt_hashes = set()
     attempted_tokens = failed_tokens = missing_success_usage = unknown_attempts = partial_lines = 0
     for path in output.glob("routing-decisions-*.jsonl"):
         with path.open(encoding="utf-8") as stream:
@@ -285,6 +361,9 @@ def audit_usage(output, *, tolerate_partial=False):
                             failed_tokens += preflight
                     else:
                         unknown_attempts += 1
+                prompt_hash = (r.get("input_metadata") or {}).get("prompt_sha256")
+                if isinstance(prompt_hash, str) and prompt_hash:
+                    prompt_hashes.add(prompt_hash)
                 if r.get("status") == "ok":
                     response = r["response"]
                     usage = response.get("usage", {}).get("input_tokens")
@@ -300,7 +379,9 @@ def audit_usage(output, *, tolerate_partial=False):
             "failed_attempt_preflight_input_tokens": failed_tokens,
             "attempts_without_preflight_count": unknown_attempts, "partial_lines": partial_lines,
             "successful_responses": len(probabilities),
-            "mean_slm_probability": sum(probabilities)/len(probabilities) if probabilities else None}
+            "mean_slm_probability": sum(probabilities)/len(probabilities) if probabilities else None,
+            "prompt_sha256": next(iter(prompt_hashes)) if len(prompt_hashes) == 1 else None,
+            "prompt_hashes": sorted(prompt_hashes)}
 
 
 def measure_embedding(embedder, *, checkpoint=None):

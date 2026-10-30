@@ -8,29 +8,15 @@
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:A800:1
 #SBATCH --time=05:00:00
-#SBATCH --job-name=router-compare
-
-# Submission example (from the project root on the cluster):
-#   export PROJECT="$HOME/ozy/span-offload-jev"
-#   export JEV_COMPARE_BASE="$PROJECT/runs/setup/four-features-config.yaml"
-#   sbatch --export=ALL,JEV_COMPARE_PROFILE=holdout deploy/jev/router_comparison.sbatch
-# The job owns one GPU for Jev + Ollama. It waits up to 30 minutes for the
-# separately managed SLM endpoint before running its six-cell smoke gate.
+#SBATCH --job-name=jev-v1-dev
 
 set -euo pipefail
 : "${PROJECT:?Set PROJECT}"
 : "${JEV_COMPARE_BASE:?Set a validated base configuration}"
-JEV_COMPARE_ACCEPTANCE="${JEV_COMPARE_ACCEPTANCE:-$PROJECT/deploy/jev/holdout-six-arm-code-acceptance.json}"
-export JEV_COMPARE_ACCEPTANCE
-JEV_COMPARE_PROFILE="${JEV_COMPARE_PROFILE:-holdout}"
-if [[ "$JEV_COMPARE_PROFILE" == "holdout" ]]; then
-  JEV_COMPARE_TASKS="${JEV_COMPARE_TASKS:-$PROJECT/experiments/instances-jev-holdout-20.txt}"
-  JEV_COMPARE_SESSION_NAME="${JEV_COMPARE_SESSION_NAME:-jev-holdout20}"
-else
-  : "${JEV_COMPARE_TASKS:?Set a task manifest for a non-holdout profile}"
-  JEV_COMPARE_SESSION_NAME="${JEV_COMPARE_SESSION_NAME:-router-compare20}"
-fi
-export JEV_COMPARE_PROFILE JEV_COMPARE_TASKS JEV_COMPARE_SESSION_NAME
+: "${JEV_COMPARE_ACCEPTANCE:?Set the reviewed code acceptance receipt}"
+JEV_COMPARE_SESSION_NAME="${JEV_COMPARE_SESSION_NAME:-jev-v1-dev}"
+export JEV_COMPARE_PROFILE="${JEV_COMPARE_PROFILE:-v1-t50}"
+export JEV_COMPARE_SESSION_NAME
 cd "$PROJECT"
 module load singularity/4.0.2
 module load gcc/9.1.0
@@ -39,76 +25,56 @@ export NO_PROXY=127.0.0.1,localhost,192.168.10.24,192.168.10.25,192.168.10.26
 export no_proxy="$NO_PROXY"
 export APPWORLD_ROOT="$PROJECT/appworld"
 export PYTHONPATH="$PROJECT/appworld/src:$PROJECT${PYTHONPATH:+:$PYTHONPATH}"
-export JEV_MODEL_DIR="$HOME/ozy/models/OpenJev-1.7B"
+export JEV_MODEL_DIR="${JEV_MODEL_DIR:-$HOME/ozy/models/OpenJev-1.7B}"
 export JEV_COMPARE_SESSION="$PROJECT/runs/${JEV_COMPARE_SESSION_NAME}-${SLURM_JOB_ID}"
 export JEV_COMPARE_CONFIG="$JEV_COMPARE_SESSION/base.yaml"
 export JEV_COMPARE_OUTPUT="$JEV_COMPARE_SESSION/comparison"
-export JEV_PORT=18901 OLLAMA_PORT=11435
-CONTAINER="$HOME/singularity/vllm_qwen35_sandbox"
+export JEV_PORT="${JEV_PORT:-18901}" OLLAMA_PORT="${OLLAMA_PORT:-11435}"
+CONTAINER="${CONTAINER:-$HOME/singularity/vllm_qwen35_sandbox}"
 mkdir "$JEV_COMPARE_SESSION"
 
 .venv/bin/python - <<'PY'
-from hashlib import sha256
 import json, os, socket
+from hashlib import sha256
 from pathlib import Path
 import yaml
+from appworld.task import load_task_ids
 
-def file_hash(name):
-    return sha256(Path(name).read_bytes()).hexdigest()
-
-p = Path(os.environ['JEV_COMPARE_SESSION'])
-gate = json.loads(Path(os.environ['JEV_COMPARE_ACCEPTANCE']).read_text())
-if gate.get('ready_for_server_smoke') is not True:
-    raise RuntimeError('Reviewed code acceptance has not passed')
-expected_tasks = Path(os.environ['PROJECT']) / 'experiments/instances-jev-holdout-20.txt'
 project = Path(os.environ['PROJECT']).resolve()
-task_manifest = Path(os.environ['JEV_COMPARE_TASKS']).resolve()
-base_config = Path(os.environ['JEV_COMPARE_BASE']).resolve()
-try:
-    task_manifest_name = task_manifest.relative_to(project).as_posix()
-except ValueError as error:
-    raise RuntimeError('Task manifest must be inside PROJECT for hashing') from error
-try:
-    base_config_name = base_config.relative_to(project).as_posix()
-except ValueError as error:
-    raise RuntimeError('Base config must be inside PROJECT for hashing') from error
-if os.environ['JEV_COMPARE_PROFILE'] == 'holdout':
-    if task_manifest != expected_tasks.resolve():
-        raise RuntimeError('Holdout profile is pinned to experiments/instances-jev-holdout-20.txt')
-    task_ids = [line.strip() for line in task_manifest.read_text(encoding='utf-8').splitlines() if line.strip()]
-    if len(task_ids) != 20 or len(set(task_ids)) != 20:
-        raise RuntimeError('Held-out manifest must contain exactly 20 unique task IDs')
-    from appworld.task import load_task_ids
-    test_normal = set(load_task_ids('test_normal'))
-    if not set(task_ids) <= test_normal:
-        raise RuntimeError('Held-out manifest contains a task outside test_normal')
-    previous = set(Path('experiments/instances-90.txt').read_text(encoding='utf-8').split())
-    previous_families = {task[:7] for task in previous}
-    if any(task[:7] in previous_families for task in task_ids):
-        raise RuntimeError('Held-out manifest overlaps a previously used task family')
-    if any(not (Path(os.environ['APPWORLD_ROOT']) / 'data/tasks' / task).is_dir() for task in task_ids):
-        raise RuntimeError('Held-out task data is missing locally')
-for name, expected in gate['sha256'].items():
-    if file_hash(name) != expected:
-        raise RuntimeError('Reviewed implementation or inputs changed: ' + name)
+receipt = json.loads(Path(os.environ['JEV_COMPARE_ACCEPTANCE']).read_text())
+if receipt.get('ready_for_server_smoke') is not True:
+    raise RuntimeError('Reviewed code acceptance has not passed')
+for name, expected in receipt.get('sha256', {}).items():
+    actual = sha256((project/name).read_bytes()).hexdigest()
+    if actual != expected:
+        raise RuntimeError('Acceptance fingerprint mismatch: '+name)
+base = Path(os.environ['JEV_COMPARE_BASE']).resolve()
+if not base.is_relative_to(project):
+    raise RuntimeError('Base config must be inside PROJECT')
+task_manifest = project/'experiments/instances-jev-v1-dev-33.txt'
+tasks = [line.strip() for line in task_manifest.read_text().splitlines() if line.strip()]
+official_dev = set(load_task_ids('dev'))
+if len(tasks) != 33 or len(set(tasks)) != 33:
+    raise RuntimeError('Expected 33 unique validation tasks')
+if not set(tasks) <= official_dev:
+    raise RuntimeError('Validation manifest contains a task outside AppWorld dev')
+if any(not (Path(os.environ['APPWORLD_ROOT'])/'data/tasks'/task).is_dir() for task in tasks):
+    raise RuntimeError('AppWorld task data is missing')
+config = yaml.safe_load(base.read_bytes())
+config['runner']['jev'].update(endpoint='http://127.0.0.1:'+os.environ['JEV_PORT'], input_mode='context', mode='active')
+config['runner']['m4_memory']['ollama_base_url'] = 'http://127.0.0.1:'+os.environ['OLLAMA_PORT']
+config['runner']['m4_memory']['embedding_mode'] = 'm1_online'
+config['runner']['m4_memory']['template_version'] = 'span-embed-v2'
+config['runner']['m4_memory']['guard_enabled'] = True
+Path(os.environ['JEV_COMPARE_CONFIG']).write_text(yaml.safe_dump(config, sort_keys=False))
 for port in [int(os.environ['JEV_PORT']), int(os.environ['OLLAMA_PORT'])]:
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', port))
-config = yaml.safe_load(Path(os.environ['JEV_COMPARE_BASE']).read_bytes())
-config['runner']['jev']['endpoint'] = 'http://127.0.0.1:' + os.environ['JEV_PORT']
-config['runner']['m4_memory']['ollama_base_url'] = 'http://127.0.0.1:' + os.environ['OLLAMA_PORT']
-config['runner']['m4_memory']['embedding_model'] = 'qwen3-embedding:0.6b'
-config['runner']['m4_memory']['embedding_mode'] = 'm1_online'
-config['runner']['m4_memory']['template_version'] = 'span-embed-v2'
-Path(os.environ['JEV_COMPARE_CONFIG']).write_text(yaml.safe_dump(config, sort_keys=False))
-names = ['experiments/compare_routers.py', 'experiments/run_native.py', 'experiments/run_appworld.py',
-         'experiments/task_outcomes.py', 'traceoffload/runner.py', 'traceoffload/m1/embedding_client.py',
-         'traceoffload/m2/jev/input_builder.py', 'router/artifact/l2_add4_twostage_logit.json',
-         task_manifest_name, base_config_name, 'deploy/jev/router_comparison.sbatch']
-if set(gate['sha256']) != set(names):
-    raise RuntimeError('Acceptance receipt must hash exactly the required source files, task manifest, and base config')
-(p/'source-hashes.json').write_text(json.dumps({n:file_hash(n) for n in names}, indent=2))
-(p/'tasks.txt').write_bytes(Path(os.environ['JEV_COMPARE_TASKS']).read_bytes())
+(Path(os.environ['JEV_COMPARE_SESSION'])/'tasks.txt').write_text('\n'.join(tasks)+'\n')
+(Path(os.environ['JEV_COMPARE_SESSION'])/'task-selection.json').write_text(json.dumps({
+    'split':'dev','count':len(tasks),'task_ids':tasks,
+    'manifest':'experiments/instances-jev-v1-dev-33.txt'}, indent=2))
+print('SELECTED_DEV_TASKS', len(tasks), flush=True)
 PY
 export JEV_COMPARE_TASKS="$JEV_COMPARE_SESSION/tasks.txt"
 
@@ -123,30 +89,24 @@ trap 'exit 143' TERM INT
 
 singularity exec --nv --cleanenv --bind /share:/share \
   --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 --env OMP_NUM_THREADS=2 \
-  "$CONTAINER" "$HOME/ozy/jev-service-env/bin/wev" serve \
-  --model "$JEV_MODEL_DIR" --device cuda --dtype bf16 --host 127.0.0.1 --port "$JEV_PORT" \
-  > "$JEV_COMPARE_SESSION/jev-service.log" 2>&1 &
+  "$CONTAINER" "$HOME/ozy/jev-service-env/bin/wev" serve --model "$JEV_MODEL_DIR" --device cuda --dtype bf16 \
+  --host 127.0.0.1 --port "$JEV_PORT" > "$JEV_COMPARE_SESSION/jev-service.log" 2>&1 &
 jev_pid=$!
 singularity exec --nv --cleanenv --bind /share:/share \
   --env OLLAMA_MODELS="$HOME/ozy/ollama-models" --env OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" \
-  --env OLLAMA_CONTEXT_LENGTH=8192 --env OLLAMA_KEEP_ALIVE=-1 \
-  --env OLLAMA_NUM_PARALLEL=1 --env OLLAMA_MAX_LOADED_MODELS=1 \
-  "$CONTAINER" "$HOME/ozy/tools/ollama-0.11.11/bin/ollama" serve \
-  > "$JEV_COMPARE_SESSION/embedding-service.log" 2>&1 &
+  --env OLLAMA_CONTEXT_LENGTH=8192 --env OLLAMA_KEEP_ALIVE=-1 --env OLLAMA_NUM_PARALLEL=1 --env OLLAMA_MAX_LOADED_MODELS=1 \
+  "$CONTAINER" "$HOME/ozy/tools/ollama-0.11.11/bin/ollama" serve > "$JEV_COMPARE_SESSION/embedding-service.log" 2>&1 &
 ollama_pid=$!
 
 ready=0
 for _ in $(seq 1 240); do
   kill -0 "$jev_pid" 2>/dev/null && kill -0 "$ollama_pid" 2>/dev/null || { echo 'Owned service exited'; exit 1; }
-  if curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "http://127.0.0.1:$JEV_PORT/v1/models" \
-       > "$JEV_COMPARE_SESSION/jev-models.json" 2>/dev/null && \
-     curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "http://127.0.0.1:$OLLAMA_PORT/api/tags" \
-       > "$JEV_COMPARE_SESSION/embedding-tags.json" 2>/dev/null; then ready=1; break; fi
+  if curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "http://127.0.0.1:$JEV_PORT/v1/models" > "$JEV_COMPARE_SESSION/jev-models.json" 2>/dev/null && \
+     curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "http://127.0.0.1:$OLLAMA_PORT/api/tags" > "$JEV_COMPARE_SESSION/embedding-tags.json" 2>/dev/null; then ready=1; break; fi
   sleep 5
 done
 test "$ready" -eq 1
 
-# Slurm after:<job> means allocated/started, not that vLLM is serving yet.
 SMALL_API=$(.venv/bin/python -c 'import os,yaml; print(yaml.safe_load(open(os.environ["JEV_COMPARE_CONFIG"]))["models"]["small"]["api_base"])')
 SLM_DEADLINE=$((SECONDS + 1800))
 until curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "${SMALL_API}/models" > "$JEV_COMPARE_SESSION/small-models-ready.json" 2>/dev/null; do
@@ -154,36 +114,38 @@ until curl --noproxy '*' --connect-timeout 2 --max-time 3 -fsS "${SMALL_API}/mod
   if (( SECONDS >= SLM_DEADLINE )); then echo 'SLM did not become ready within 30 minutes'; exit 1; fi
   sleep 5
 done
-echo 'SLM_SERVICE_READY'
+echo SLM_SERVICE_READY
 
 .venv/bin/python - <<'PY'
-from dataclasses import replace
 import json, os
+from dataclasses import replace
 from pathlib import Path
 import httpx, yaml
 from deploy.jev.openjev_preflight import OpenJevPreflight
 from traceoffload.m1.embedding_client import OllamaEmbeddingClient
 from traceoffload.m2.jev.types import load_jev_config
 from traceoffload.m2.jev.client import HttpJevClient
-from traceoffload.m2.jev.input_builder import ROUTE_INSTRUCTIONS_V1, ROUTE_CRITERIA_V1
+from traceoffload.m2.jev.input_builder import ROUTE_CONTEXT_INSTRUCTIONS_V3, ROUTE_CRITERIA_V2
 config = yaml.safe_load(Path(os.environ['JEV_COMPARE_CONFIG']).read_bytes())
 root = Path(os.environ['JEV_COMPARE_SESSION'])
 embedding = OllamaEmbeddingClient(base_url=config['runner']['m4_memory']['ollama_base_url'], timeout_seconds=120)
 vector = embedding.embed_one('[GOAL] Check the requested item\n\n')
 assert vector.dimension == 1024
-(root/'embedding-warmup.json').write_text(json.dumps({'model':vector.model,'dimension':vector.dimension,
-    'prompt_eval_count':vector.prompt_eval_count,'client_normalize':True,'server_context_length':8192}))
+(root/'embedding-warmup.json').write_text(json.dumps({'model':vector.model,'dimension':vector.dimension,'prompt_eval_count':vector.prompt_eval_count,'client_normalize':True,'server_context_length':8192}))
 j = load_jev_config(config, mode='classifier_route')
 client = HttpJevClient(replace(j,request_timeout_ms=120000), input_preflight=OpenJevPreflight.from_directory(os.environ['JEV_MODEL_DIR']))
-body = {'model':j.model_id,'state':{'model_info':{'large_model':config['models']['large']['model_id'],
-    'small_model':config['models']['small']['model_id']},'context':{'goal_text':'Check the requested item'}},
-    'questions':{'route':{'type':'choice','instructions':ROUTE_INSTRUCTIONS_V1,'criteria':dict(ROUTE_CRITERIA_V1)}}}
+body = {'model':j.model_id,'state':{'model_info':{'large_model':config['models']['large']['model_id'],'small_model':config['models']['small']['model_id']},'context':{'goal_text':'Check the requested item','goal_available':True}},'questions':{'route':{'type':'choice','instructions':ROUTE_CONTEXT_INSTRUCTIONS_V3,'criteria':dict(ROUTE_CRITERIA_V2)}}}
 (root/'jev-warmup.json').write_text(json.dumps(client.predict(body,timeout_ms=120000)))
 with httpx.Client(trust_env=False,timeout=10) as h:
-    for kind in ['large','small']:
-        r=h.get(config['models'][kind]['api_base']+'/models');r.raise_for_status()
-        (root/(kind+'-models.json')).write_text(r.text)
-    (root/'embedding-placement.json').write_text(h.get(embedding._base_url+'/api/ps').text)
-print('ALL_SERVICES_WARMED',flush=True)
+  for kind in ['large','small']:
+    r=h.get(config['models'][kind]['api_base']+'/models'); r.raise_for_status(); (root/(kind+'-models.json')).write_text(r.text)
+print('ALL_SERVICES_WARMED', flush=True)
 PY
-.venv/bin/python -u -m experiments.compare_routers
+
+for profile in v1-t50 v1-t60 v1-t70; do
+  export JEV_COMPARE_PROFILE="$profile"
+  export JEV_COMPARE_OUTPUT="$JEV_COMPARE_SESSION/$profile/comparison"
+  mkdir -p "$JEV_COMPARE_SESSION/$profile"
+  .venv/bin/python -u -m experiments.compare_routers
+  cp "$JEV_COMPARE_OUTPUT/report.json" "$JEV_COMPARE_SESSION/$profile-report.json"
+done

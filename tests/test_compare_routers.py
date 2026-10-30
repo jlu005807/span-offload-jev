@@ -23,7 +23,8 @@ def config():
 
 def result(group, task, **changes):
     thresholds = {"jev08": .8, "jev07": .7, "jev050": .5, "jev055": .55, "jev060": .6,
-                  "jev065": .65, "jev070": .7, "jev075": .75}
+                  "jev065": .65, "jev070": .7, "jev075": .75,
+                  "jev_v1_t50": .5, "jev_v1_t60": .6, "jev_v1_t70": .7}
     row = {"instance_id": task, "task_success": True, "total_tokens": 25,
            "framework_model_calls_by_target": {"large_model": 2},
            "framework_tokens_by_target_io": {"large_model": {"in": 20, "out": 5}},
@@ -33,7 +34,8 @@ def result(group, task, **changes):
     if group.startswith("jev"):
         row["jev"] = {"http_successes": 2, "routing_audit_complete": True,
                       "input_mode": "context", "threshold": thresholds[group]}
-        row["jev_audit"] = {"input_tokens_known": 13, "known_usage_responses": 2}
+        row["jev_audit"] = {"input_tokens_known": 13, "known_usage_responses": 2,
+                             "prompt_sha256": module()._context_prompt_sha256()}
     row.update(changes)
     return row
 
@@ -315,3 +317,54 @@ def test_holdout_run_accounts_for_six_groups_in_smoke_batch_and_progress(monkeyp
     manifest = json.loads((tmp_path / "holdout/manifest.json").read_text())
     assert manifest["groups"] == list(expected_groups)
     assert manifest["holdout_evaluation"] is True
+
+
+def test_v1_profiles_are_single_threshold_context_groups(monkeypatch):
+    monkeypatch.setenv("JEV_COMPARE_PROFILE", "v1-t50")
+    mod = module()
+    configs = mod.build_configs(config())
+    assert mod.active_groups() == ("jev_v1_t50",)
+    assert set(configs) == {"jev_v1_t50"}
+    jev = configs["jev_v1_t50"]["runner"]["jev"]
+    assert jev["threshold"] == .5
+    assert jev["input_mode"] == "context"
+    assert configs["jev_v1_t50"]["runner"]["m4_memory"]["guard_enabled"] is True
+
+
+def test_v1_profiles_require_33_dev_tasks_and_record_metadata(monkeypatch, tmp_path):
+    monkeypatch.setenv("JEV_COMPARE_PROFILE", "v1-t60")
+    mod = module()
+    with pytest.raises(ValueError, match="exactly 33"):
+        mod.run_comparison(config(), ["one"], tmp_path / "too-short", execute=lambda *args: None,
+                           health=lambda _: None, task_splits={"one": "dev"})
+    tasks = [f"task-{i}" for i in range(33)]
+    calls = []
+
+    def execute(group, cfg, task, output, experiment, split):
+        calls.append((group, task, split))
+        return result("jev_v1_t60", task)
+
+    report = mod.run_comparison(
+        config(), tasks, tmp_path / "v1", execute=execute, health=lambda _: None,
+        task_splits={task: "dev" for task in tasks}, smoke_task=tasks[0])
+    assert len(calls) == 34
+    assert report["complete"] is True
+    manifest = json.loads((tmp_path / "v1/manifest.json").read_text())
+    assert manifest["experiment_group_id"] == "V1-T60"
+    assert manifest["smoke_excluded_from_formal_results"] is True
+    assert len(json.loads((tmp_path / "v1/results.json").read_text())) == 33
+
+
+def test_v1_missing_prompt_hash_is_not_accepted():
+    mod = module()
+    row = result("jev_v1_t70", "task")
+    row["jev_audit"].pop("prompt_sha256")
+    assert "jev_prompt_hash_mismatch" in mod.acceptance_errors("jev_v1_t70", row)
+
+
+def test_execution_cost_is_unknown_without_token_telemetry():
+    mod = module()
+    assert mod._estimated_execution_cost_usd({}) is None
+    assert mod._estimated_execution_cost_usd({
+        "framework_tokens_by_target_io": {"large_model": {"in": 1_000_000, "out": 2_000_000}}
+    }) == 5.45
