@@ -35,7 +35,7 @@ mkdir "$JEV_COMPARE_SESSION"
 
 .venv/bin/python - <<'PY'
 import json, os, socket
-from hashlib import sha256
+from hashlib import sha256`nimport subprocess
 from pathlib import Path
 import yaml
 from appworld.task import load_task_ids
@@ -45,7 +45,8 @@ receipt = json.loads(Path(os.environ['JEV_COMPARE_ACCEPTANCE']).read_text())
 if receipt.get('ready_for_server_smoke') is not True:
     raise RuntimeError('Reviewed code acceptance has not passed')
 for name, expected in receipt.get('sha256', {}).items():
-    actual = sha256((project/name).read_bytes()).hexdigest()
+    source = subprocess.check_output(['git', 'show', 'HEAD:'+name], cwd=project)
+    actual = sha256(source).hexdigest()
     if actual != expected:
         raise RuntimeError('Acceptance fingerprint mismatch: '+name)
 base = Path(os.environ['JEV_COMPARE_BASE']).resolve()
@@ -53,8 +54,7 @@ if not base.is_relative_to(project):
     raise RuntimeError('Base config must be inside PROJECT')
 task_manifest = project/'experiments/instances-jev-v1-validation-33.txt'
 tasks = [line.strip() for line in task_manifest.read_text().splitlines() if line.strip()]
-official_splits = {name: set(load_task_ids(name)) for name in ['train', 'dev', 'test_normal', 'test_challenge']} 
-all_official = set().union(*official_splits.values())
+official_splits = {name: set(load_task_ids(name)) for name in ['train', 'dev', 'test_normal', 'test_challenge']}all_official = set().union(*official_splits.values())
 if len(tasks) != 33 or len(set(tasks)) != 33:
     raise RuntimeError('Expected 33 unique validation tasks')
 if not set(tasks) <= all_official:

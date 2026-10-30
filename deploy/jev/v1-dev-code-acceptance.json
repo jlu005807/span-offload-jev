@@ -1,26 +1,25 @@
 {
   "receipt_type": "local_code_acceptance_for_v1_dev_server_smoke",
   "ready_for_server_smoke": true,
-  "scope": "V1 context prompt, fixed 33-task validation manifest, thresholds 0.50/0.60/0.70. Local checks only; does not claim AppWorld split validation, service smoke, or formal completion.",
+  "scope": "V1 current context prompt, fixed 33-task project validation manifest, thresholds 0.50/0.60/0.70. Local code acceptance only; server verifies AppWorld task availability and no exact-ID overlap with the 90-task test manifest.",
   "local_verification": {
     "test_compare_routers": "23 passed",
     "test_contracts_and_appworld_goal": "included; combined 36 passed",
-    "manifest": "33 unique IDs exactly match docs/DATA.md validation set",
+    "manifest": "33 unique IDs exactly match docs/DATA.md validation set; zero exact-ID overlap with experiments/instances-90.txt",
     "sbatch_bash_syntax": "passed",
     "python_compile": "passed",
     "git_diff_check": "passed"
   },
   "sha256": {
-    "experiments/compare_routers.py": "5370046b7b02e5b63142dfdaf1d9976ea04199fa4f2bf57133a9ab8f033f9674",
-    "experiments/run_native.py": "1253b1f9c553f8fe432ac8728afb05fd77c57816801789da4ef576fbe91708aa",
-    "experiments/run_appworld.py": "26b90b09f1934eb52a4b921ebc1c1556b8c2039aea70aedee369da9897b3fdd0",
+    "experiments/compare_routers.py": "6cf3fcda55282906df57fa0fc68d7c06cea82b8a46e22140581aa073b8583e1d",
+    "experiments/run_native.py": "4f112e2cf4892b7b18f0b54e428e1b736739e0c3aed452cfa98d25cc0228e964",
+    "experiments/run_appworld.py": "817d53f5342527fb878a2509b6464e22859fd164d9a61570b637b35a73816a12",
     "experiments/task_outcomes.py": "56c9d63a698c80b619a802812666df949a8660f30512e8f605206f800da1742d",
-    "traceoffload/runner.py": "733ad253af31bcede966b79def63f19ea2880031153dcf925da5fb819b79d5a8",
-    "traceoffload/m1/embedding_client.py": "488e23340a37af7844656ac8431e1ef5452a886dfa72dfc76e6121545717c74b",
+    "traceoffload/runner.py": "e66469651236547335cfac0c7442fa112cf314234c72d419e69563d550907072",
+    "traceoffload/m1/embedding_client.py": "1be978eae9d27d0c8093a017d87699fb07e483ee0ae665e61820404be726e4ae",
     "traceoffload/m2/jev/input_builder.py": "05366a7c82d6a70f4531cb5fd8bfb24d98c8a6ab64b67ccb21593865f714d70a",
     "router/artifact/l2_add4_twostage_logit.json": "0d0b15b24882204a0830028e32ca18c57d9c5a048dcdcb2d73bb5418baf23406",
-    "experiments/instances-jev-v1-dev-33.txt": "6df01b12db6973d31c239f016363e9076d03cd1365b629ef6f36e7383b8a2d69",
-    "runs/setup/four-features-config.yaml": "ce94c1400cff978421cc5232fbd10aceede60cce66012c4f3886355fbee5ceaf",
-    "deploy/jev/router_comparison.sbatch": "7da2908e62d15ecc85f13a3163e007ad8ca01a7a47b8d91f17a8533369d202a4"
+    "deploy/jev/router_comparison.sbatch": "629ff2abf334c30712efe4eaab38e86d29d00ba040d05f0a379daf94c5e4fffa",
+    "experiments/instances-jev-v1-validation-33.txt": "6df01b12db6973d31c239f016363e9076d03cd1365b629ef6f36e7383b8a2d69"
   }
 }
