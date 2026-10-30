@@ -76,14 +76,27 @@ def test_modes_send_one_shared_question_and_actual_executor_identities(mode, par
     assert set(body["state"]) == parts
     assert body["state"]["model_info"] == {
         "large_model": "executor-large", "small_model": "executor-small",
-        "execution_policy": "SLM沿用现有守卫及LLM失败兜底",
+        "execution_policy": "The small model uses the existing guard and large-model fallback.",
     }
     assert list(body["questions"]) == ["route"]
     question = body["questions"]["route"]
     assert question["type"] == "choice"
-    assert question["instructions"] == _module().ROUTE_INSTRUCTIONS_V1
+    expected_instructions = (_module().ROUTE_CONTEXT_INSTRUCTIONS_V3 if mode == "context"
+                             else _module().ROUTE_INSTRUCTIONS_V2)
+    assert question["instructions"] == expected_instructions
     assert list(question["criteria"]) == ["LLM", "SLM"]
+    assert all(ord(character) < 128 for character in question["instructions"])
+    assert all(ord(character) < 128 for value in question["criteria"].values() for character in value)
     assert "executor-small" not in question["instructions"]
+    if mode == "context":
+        assert "four feature" not in question["instructions"].lower()
+        assert "prefix_n_A" not in question["instructions"]
+        assert "log_est_prompt_tokens" not in question["instructions"]
+        assert "V2_goal_recent" not in question["instructions"]
+        assert "C_bare_w10" not in question["instructions"]
+        assert prepared.metadata["prompt_version"] == _module().CONTEXT_PROMPT_VERSION
+    else:
+        assert prepared.metadata["prompt_version"] == _module().PROMPT_VERSION
 
 
 def test_four_features_reuses_both_existing_text_recipes_and_ignores_extra_observations():
