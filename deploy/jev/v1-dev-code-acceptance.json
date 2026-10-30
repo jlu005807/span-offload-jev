@@ -1,5 +1,5 @@
 {
-  "receipt_type": "local_code_acceptance_for_v1_dev_server_smoke",
+  "receipt_type": "local_code_acceptance_for_v1_validation_server_smoke",
   "ready_for_server_smoke": true,
   "scope": "V1 current context prompt, fixed 33-task project validation manifest, thresholds 0.50/0.60/0.70. Local code acceptance only; server verifies AppWorld task availability and no exact-ID overlap with the 90-task test manifest.",
   "local_verification": {
@@ -19,7 +19,7 @@
     "traceoffload/m1/embedding_client.py": "1be978eae9d27d0c8093a017d87699fb07e483ee0ae665e61820404be726e4ae",
     "traceoffload/m2/jev/input_builder.py": "05366a7c82d6a70f4531cb5fd8bfb24d98c8a6ab64b67ccb21593865f714d70a",
     "router/artifact/l2_add4_twostage_logit.json": "0d0b15b24882204a0830028e32ca18c57d9c5a048dcdcb2d73bb5418baf23406",
-    "deploy/jev/router_comparison.sbatch": "629ff2abf334c30712efe4eaab38e86d29d00ba040d05f0a379daf94c5e4fffa",
+    "deploy/jev/router_comparison.sbatch": "318930d860eae0cb7d5b4239bd57bdb6b655c90329a5c7c6673e7979a2801262",
     "experiments/instances-jev-v1-validation-33.txt": "6df01b12db6973d31c239f016363e9076d03cd1365b629ef6f36e7383b8a2d69"
   }
 }

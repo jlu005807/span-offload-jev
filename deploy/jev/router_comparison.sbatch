@@ -35,7 +35,8 @@ mkdir "$JEV_COMPARE_SESSION"
 
 .venv/bin/python - <<'PY'
 import json, os, socket
-from hashlib import sha256`nimport subprocess
+from hashlib import sha256
+import subprocess
 from pathlib import Path
 import yaml
 from appworld.task import load_task_ids
@@ -54,7 +55,8 @@ if not base.is_relative_to(project):
     raise RuntimeError('Base config must be inside PROJECT')
 task_manifest = project/'experiments/instances-jev-v1-validation-33.txt'
 tasks = [line.strip() for line in task_manifest.read_text().splitlines() if line.strip()]
-official_splits = {name: set(load_task_ids(name)) for name in ['train', 'dev', 'test_normal', 'test_challenge']}all_official = set().union(*official_splits.values())
+official_splits = {name: set(load_task_ids(name)) for name in ['train', 'dev', 'test_normal', 'test_challenge']}
+all_official = set().union(*official_splits.values())
 if len(tasks) != 33 or len(set(tasks)) != 33:
     raise RuntimeError('Expected 33 unique validation tasks')
 if not set(tasks) <= all_official:
