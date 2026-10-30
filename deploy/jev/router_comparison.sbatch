@@ -51,13 +51,17 @@ for name, expected in receipt.get('sha256', {}).items():
 base = Path(os.environ['JEV_COMPARE_BASE']).resolve()
 if not base.is_relative_to(project):
     raise RuntimeError('Base config must be inside PROJECT')
-task_manifest = project/'experiments/instances-jev-v1-dev-33.txt'
+task_manifest = project/'experiments/instances-jev-v1-validation-33.txt'
 tasks = [line.strip() for line in task_manifest.read_text().splitlines() if line.strip()]
-official_dev = set(load_task_ids('dev'))
+official_splits = {name: set(load_task_ids(name)) for name in ['train', 'dev', 'test_normal', 'test_challenge']} 
+all_official = set().union(*official_splits.values())
 if len(tasks) != 33 or len(set(tasks)) != 33:
     raise RuntimeError('Expected 33 unique validation tasks')
-if not set(tasks) <= official_dev:
-    raise RuntimeError('Validation manifest contains a task outside AppWorld dev')
+if not set(tasks) <= all_official:
+    raise RuntimeError('Validation manifest contains unknown AppWorld task IDs')
+previous = set(line.strip() for line in (project/'experiments/instances-90.txt').read_text().splitlines() if line.strip())
+if set(tasks) & previous:
+    raise RuntimeError('Validation manifest overlaps the 90-task test manifest')
 if any(not (Path(os.environ['APPWORLD_ROOT'])/'data/tasks'/task).is_dir() for task in tasks):
     raise RuntimeError('AppWorld task data is missing')
 config = yaml.safe_load(base.read_bytes())
@@ -72,9 +76,9 @@ for port in [int(os.environ['JEV_PORT']), int(os.environ['OLLAMA_PORT'])]:
         sock.bind(('127.0.0.1', port))
 (Path(os.environ['JEV_COMPARE_SESSION'])/'tasks.txt').write_text('\n'.join(tasks)+'\n')
 (Path(os.environ['JEV_COMPARE_SESSION'])/'task-selection.json').write_text(json.dumps({
-    'split':'dev','count':len(tasks),'task_ids':tasks,
-    'manifest':'experiments/instances-jev-v1-dev-33.txt'}, indent=2))
-print('SELECTED_DEV_TASKS', len(tasks), flush=True)
+    'split':'project_validation','count':len(tasks),'task_ids':tasks,
+    'manifest':'experiments/instances-jev-v1-validation-33.txt'}, indent=2))
+print('SELECTED_VALIDATION_TASKS', len(tasks), flush=True)
 PY
 export JEV_COMPARE_TASKS="$JEV_COMPARE_SESSION/tasks.txt"
 

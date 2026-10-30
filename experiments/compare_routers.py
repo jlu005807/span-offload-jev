@@ -259,9 +259,9 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
     smoke_task = smoke_task or (tasks[0] if is_v1_profile else "099174d_1")
     if task_splits is None or any(t not in task_splits for t in [*tasks, smoke_task]):
         raise ValueError("Official dataset split required for every task")
-    if is_v1_profile and (any(task_splits[t] != "dev" for t in tasks)
-                          or task_splits[smoke_task] != "dev"):
-        raise ValueError("V1 threshold runs may use only AppWorld dev tasks")
+    if is_v1_profile and any(task_splits[t] not in {"train", "dev", "test_normal", "test_challenge"}
+                              for t in [*tasks, smoke_task]):
+        raise ValueError("V1 tasks must map to an official AppWorld split")
     output.mkdir(parents=True)
     config_paths, hashes = {}, {}
     for group, config in configs.items():
