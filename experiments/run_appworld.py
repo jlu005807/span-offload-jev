@@ -32,6 +32,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import yaml  # noqa: E402
+from experiments.task_outcomes import observe_termination, finalize_task_outcome  # noqa: E402
 
 from traceoffload.clock import real_time, real_utcnow  # noqa: E402
 from traceoffload.config import load_env_file  # noqa: E402
@@ -726,6 +727,7 @@ class AppWorldPilotRunner(PilotRunner):
         # 必须在建 runtime 之前 —— `workflow_run_id` 要用它。
         self._resolve_experiment_id(instance_keys=self._appworld_task_ids)
         agent = self._build_native_agent()
+        terminations = observe_termination(agent)
         large_language_model = agent.language_model
         runtime = AppWorldTraceOffloadRuntime(
             workflow_run_id=self._workflow_run_id(task_id),
@@ -828,6 +830,9 @@ class AppWorldPilotRunner(PilotRunner):
                 e2e_wall_clock_ms=elapsed,
                 error=error,
             )
+            if meter.calls:
+                row.update(meter.summary())
+            finalize_task_outcome(row, terminations)
             self._workflow_rows[workflow_run_id] = row
             return row
         runtime.coordinator.flush_pending(workflow_run_id)
@@ -959,6 +964,7 @@ class AppWorldPilotRunner(PilotRunner):
             "e2e_wall_clock_ms": e2e_wall_clock_ms,
         }
         row.update(meter.summary())
+        finalize_task_outcome(row, terminations)
         # T2 机制计数（spec §3.2）—— **必须进 summary**，否则摘掉机制的臂和满血臂
         # 在报告里长得一模一样，分不清「没效果」和「没触发」。
         # 0925 实测：加这个之前，60 次跑里守卫触发过几次**问不出来**
@@ -1045,7 +1051,7 @@ def _failure_row(
     `{"hits": 0}` 上去，汇总里会和「跑了但一次没出分」长得一模一样。
     缺键才是诚实的：下游一眼看出这条不可用。
     """
-    return {
+    return finalize_task_outcome({
         "record_type": "workflow",
         "workflow_run_id": workflow_run_id,
         "instance_id": instance_id,
@@ -1058,7 +1064,7 @@ def _failure_row(
         "appworld_fail_count": 0,
         "e2e_wall_clock_ms": e2e_wall_clock_ms,
         "failure": f"{type(error).__name__}: {error}",
-    }
+    })
 
 
 def _read_summary_rows(path: Path) -> list[dict[str, Any]]:

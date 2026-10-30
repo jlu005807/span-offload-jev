@@ -54,10 +54,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import yaml  # noqa: E402
+from experiments.task_outcomes import observe_termination, finalize_task_outcome  # noqa: E402
 
 from traceoffload.config import load_env_file  # noqa: E402
 
-from run_appworld import (  # noqa: E402
+from experiments.run_appworld import (  # noqa: E402
     _build_agent_config,
     _build_language_model_config,
     _ensure_appworld_agents_importable,
@@ -196,6 +197,9 @@ def run_native_task(
     # a key.  The TraceOffload entry point sets this too; the native baseline
     # has to mirror it or the agent never gets built.
     os.environ.setdefault("OPENAI_API_KEY", "dummy")
+    # AppWorld reads this even when base_url is already an absolute URL.
+    # Initialize here too: comparison workers bypass the CLI main().
+    os.environ.setdefault("MODEL_SERVER_URL", "")
     _ensure_appworld_agents_importable()
     from appworld import AppWorld
     from appworld_agents.code.simplified.agent import Agent
@@ -214,6 +218,7 @@ def run_native_task(
     # pin the dataset that AppWorld records in its experiment metadata.
     agent_config["appworld_config"]["dataset_name"] = dataset_name
     agent = Agent.from_dict(agent_config)
+    terminations = observe_termination(agent)
 
     totals = _empty_usage()
     _install_measurement(agent.language_model, totals)
@@ -306,6 +311,7 @@ def run_native_task(
         "usage_tracker_tokens": _tracker_tokens(agent, task_id),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
+    finalize_task_outcome(row, terminations)
     (output_dir / "result.json").write_text(
         json.dumps(row, indent=2, ensure_ascii=False), encoding="utf-8"
     )

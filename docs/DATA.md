@@ -75,7 +75,11 @@ python bench-resources/run_appworld_spanoffload.py \
 |---|---:|---:|---|---|
 | 训练集 | 249 | 4950 | 训练路由器 | `runs/训练集` |
 | 验证集 | 33 | 588 | 挑阈值、报离线指标 | `runs/验证集` |
-| 测试集 | 90 | — | 在线跑批（只跑 1 轮） | AppWorld `train` split |
+| 测试集 | 90 | — | 在线跑批（只跑 1 轮） | `experiments/instances-90.txt`，项目自定义划分 |
+
+2026-10-23 按本地及服务器的 AppWorld data 0.2.0 官方清单逐个核对：项目这 90 个任务来自官方 train 11 个、dev 4 个、test_normal 23 个、test_challenge 52 个。此前表中“AppWorld train split”的描述不正确；项目的训练/验证/测试命名不能直接对应官方划分。
+
+`experiments/instances-90.txt` 与本文测试任务列表完全一致，并与本文训练 249、验证 33 个任务在 **task_id** 层面互不重叠；这不代表任务生成器或场景家族互斥。复现项目在线比较应使用固定 90 清单，结果标为“项目自定义 90 任务”；如另做官方 dev/test 实验，必须另列结果，并先核对旧路由训练数据是否与之重叠，不能直接比较不同清单上的成功率。
 
 **新增数据前先查下面三张表**：task_id 已存在就别再采；要扩训练集只能加**没出现过的 task**。
 
