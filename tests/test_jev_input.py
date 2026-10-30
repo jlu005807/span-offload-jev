@@ -249,6 +249,19 @@ def test_context_marks_unknown_goal_without_using_reference_as_goal():
     assert "private-ref" not in _json(prepared.request)
 
 
+def test_context_normalizes_whitespace_goal_as_unavailable():
+    prepared = _builder().build(
+        _context(goal="   "), _request(_msg("user", "Known observation")), _profile())
+
+    assert prepared.error is None
+    state = prepared.request["state"]["context"]
+    assert state["goal_text"] is None
+    assert state["goal_available"] is False
+    serialized = _json(prepared.request)
+    assert "024c982_1" not in serialized
+    assert "AppWorld task 024c982_1" not in serialized
+
+
 @pytest.mark.parametrize("mode", ["four_features", "combined"])
 def test_features_do_not_treat_an_unresolved_goal_reference_as_task_text(mode):
     prepared = _builder(mode).build(_context(goal=None), _request(_msg("user", "Known result")), _profile())

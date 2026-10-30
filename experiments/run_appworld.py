@@ -298,9 +298,9 @@ def _task_instruction(task_id: str) -> str:
 
 
 def _workflow_goal(task_id: str) -> WorkflowGoal:
-    """构造带真实指令的 `WorkflowGoal`；读不到则退化成 task_id 文案。"""
-    instruction = _task_instruction(task_id)
-    return WorkflowGoal(goal_text=instruction or f"AppWorld task {task_id}")
+    """构造真实任务目标；目标文本缺失时不使用 task_id 代替。"""
+    instruction = _task_instruction(task_id).strip()
+    return WorkflowGoal(goal_text=instruction)
 
 
 def _prompt_path(relative: str) -> str:
