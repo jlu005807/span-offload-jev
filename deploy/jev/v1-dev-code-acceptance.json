@@ -20,7 +20,7 @@
     "traceoffload/m2/jev/input_builder.py": "b455984c654594ea1a6f214fdf73520eb08f08ab0d9fa7e706724db72b44f62f",
     "traceoffload/m2/jev/types.py": "f252b417524902192c273092a38bdffb49d43d1360a5f8b96c2e112f41636281",
     "router/artifact/l2_add4_twostage_logit.json": "0d0b15b24882204a0830028e32ca18c57d9c5a048dcdcb2d73bb5418baf23406",
-    "deploy/jev/router_comparison.sbatch": "79ddb97796c7ebbb20d37c24237da7f447a9f113f91d6efc283704e8891fd769",
+    "deploy/jev/router_comparison.sbatch": "a299ac16eee7b8effe63e6026687ec1c09a7fd13d0bafdaf06c2a32e5003a12f",
     "experiments/instances-jev-v1-validation-33.txt": "6df01b12db6973d31c239f016363e9076d03cd1365b629ef6f36e7383b8a2d69"
   }
 }

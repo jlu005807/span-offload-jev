@@ -67,6 +67,10 @@ if set(tasks) & previous:
 if any(not (Path(os.environ['APPWORLD_ROOT'])/'data/tasks'/task).is_dir() for task in tasks):
     raise RuntimeError('AppWorld task data is missing')
 config = yaml.safe_load(base.read_bytes())
+for kind, variable in [('large', 'JEV_LARGE_API_BASE'), ('small', 'JEV_SMALL_API_BASE')]:
+    endpoint = os.environ.get(variable)
+    if endpoint:
+        config['models'][kind]['api_base'] = endpoint.rstrip('/')
 config['runner']['jev'].update(endpoint='http://127.0.0.1:'+os.environ['JEV_PORT'], input_mode='context', mode='active')
 config['runner']['m4_memory']['ollama_base_url'] = 'http://127.0.0.1:'+os.environ['OLLAMA_PORT']
 config['runner']['m4_memory']['embedding_mode'] = 'm1_online'
