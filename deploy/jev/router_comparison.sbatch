@@ -154,12 +154,24 @@ PY
 
 PROMPT_VERSIONS="${JEV_PROMPT_VERSIONS:-v1}"
 IFS=':' read -r -a prompt_versions <<< "$PROMPT_VERSIONS"
+PROMPT_THRESHOLDS="${JEV_PROMPT_THRESHOLDS:-t50:t60:t70}"
+IFS=':' read -r -a thresholds <<< "$PROMPT_THRESHOLDS"
+if [[ ${#thresholds[@]} -eq 0 ]]; then
+  echo 'At least one threshold is required' >&2
+  exit 2
+fi
+for threshold in "${thresholds[@]}"; do
+  case "$threshold" in
+    t50|t60|t70) ;;
+    *) echo "Unsupported threshold: $threshold" >&2; exit 2 ;;
+  esac
+done
 for prompt_version in "${prompt_versions[@]}"; do
   case "$prompt_version" in
     v1|v2|v3) ;;
     *) echo "Unsupported prompt version: $prompt_version" >&2; exit 2 ;;
   esac
-  for threshold in t50 t60 t70; do
+  for threshold in "${thresholds[@]}"; do
     profile="$prompt_version-$threshold"
     export JEV_COMPARE_PROFILE="$profile"
     export JEV_COMPARE_OUTPUT="$JEV_COMPARE_SESSION/$profile/comparison"
