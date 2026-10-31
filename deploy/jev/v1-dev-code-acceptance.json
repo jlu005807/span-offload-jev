@@ -11,7 +11,7 @@
     "git_diff_check": "passed"
   },
   "sha256": {
-    "experiments/compare_routers.py": "4d46c688cfbd05693aef36e18002843d79a3b79f26851d4cf315aa9b9a0de8e3",
+    "experiments/compare_routers.py": "80a3b9d8f4de82f74f09b5747e5e7ed8346df273bafaefc7c136435a3f76d873",
     "experiments/run_native.py": "4f112e2cf4892b7b18f0b54e428e1b736739e0c3aed452cfa98d25cc0228e964",
     "experiments/run_appworld.py": "817d53f5342527fb878a2509b6464e22859fd164d9a61570b637b35a73816a12",
     "experiments/task_outcomes.py": "56c9d63a698c80b619a802812666df949a8660f30512e8f605206f800da1742d",

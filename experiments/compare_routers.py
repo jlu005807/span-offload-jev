@@ -274,7 +274,8 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
         raise ValueError("Prompt threshold runs require exactly 33 validation tasks")
     configs = build_configs(raw, groups=groups)
     health = health or check_services
-    smoke_task = smoke_task or (tasks[0] if is_prompt_profile else "099174d_1")
+    smoke_task = (smoke_task or os.environ.get("JEV_COMPARE_SMOKE_TASK")
+                  or (tasks[0] if is_prompt_profile else "099174d_1"))
     if task_splits is None or any(t not in task_splits for t in [*tasks, smoke_task]):
         raise ValueError("Official dataset split required for every task")
     if is_prompt_profile and any(task_splits[t] not in {"train", "dev", "test_normal", "test_challenge"}

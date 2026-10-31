@@ -376,6 +376,22 @@ def test_v1_profiles_require_33_dev_tasks_and_record_metadata(monkeypatch, tmp_p
     assert len(json.loads((tmp_path / "v1/results.json").read_text())) == 33
 
 
+def test_smoke_task_can_be_selected_without_changing_formal_task_manifest(monkeypatch, tmp_path):
+    monkeypatch.setenv("JEV_COMPARE_PROFILE", "baseline")
+    monkeypatch.setenv("JEV_COMPARE_SMOKE_TASK", "short-smoke")
+    mod = module()
+    tasks = ["formal-task"]
+    report = mod.run_comparison(
+        config(), tasks, tmp_path / "smoke-selection", execute=lambda group, *args: result(group, args[1]),
+        health=lambda _: None, task_splits={"formal-task": "dev", "short-smoke": "dev"})
+    manifest = json.loads((tmp_path / "smoke-selection/manifest.json").read_text())
+    smoke = json.loads((tmp_path / "smoke-selection/smoke-results.json").read_text())
+    assert manifest["task_ids"] == tasks
+    assert manifest["smoke_task_id"] == "short-smoke"
+    assert {row["instance_id"] for row in smoke} == {"short-smoke"}
+    assert report["complete"] is True
+
+
 def test_v1_missing_prompt_hash_is_not_accepted():
     mod = module()
     row = result("jev_v1_t70", "task")
