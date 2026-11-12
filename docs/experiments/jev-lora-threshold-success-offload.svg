@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="760" viewBox="0 0 1120 760" role="img" aria-labelledby="title desc">
+  <title id="title">LoRA V1 thresholds: AppWorld success rate versus actual SLM offload rate</title>
+  <desc id="desc">Seven threshold results on the same 56 AppWorld dev tasks. Horizontal whiskers show Wilson 95 percent intervals for task success rate. Offload rate is actual SLM calls divided by all actual model calls; no uncertainty interval is shown for call-level offload.</desc>
+  <style>
+    text { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; fill: #263746; }
+    .grid { stroke: #dce3e8; stroke-width: 1; }
+    .axis { stroke: #536573; stroke-width: 1.5; }
+    .tick { font-size: 13px; }
+    .label { font-size: 14px; font-weight: 600; }
+    .subtitle { font-size: 14px; fill: #52616b; }
+  </style>
+  <rect width="1120" height="760" fill="#ffffff"/>
+  <text x="560" y="38" text-anchor="middle" font-size="22" font-weight="700">LoRA-V1 阈值：任务成功率与实际 SLM 卸载率</text>
+  <text x="560" y="64" text-anchor="middle" class="subtitle">同一组 56 个 AppWorld dev task；横向线为成功率 Wilson 95% 区间</text>
+
+  <line class="grid" x1="105" y1="620" x2="990" y2="620"/><line class="grid" x1="105" y1="520" x2="990" y2="520"/>
+  <line class="grid" x1="105" y1="420" x2="990" y2="420"/><line class="grid" x1="105" y1="320" x2="990" y2="320"/>
+  <line class="grid" x1="105" y1="220" x2="990" y2="220"/><line class="grid" x1="105" y1="120" x2="990" y2="120"/>
+  <line class="grid" x1="105" y1="620" x2="105" y2="120"/><line class="grid" x1="265.91" y1="620" x2="265.91" y2="120"/>
+  <line class="grid" x1="426.82" y1="620" x2="426.82" y2="120"/><line class="grid" x1="587.73" y1="620" x2="587.73" y2="120"/>
+  <line class="grid" x1="748.64" y1="620" x2="748.64" y2="120"/><line class="grid" x1="909.55" y1="620" x2="909.55" y2="120"/>
+  <line class="axis" x1="105" y1="620" x2="990" y2="620"/><line class="axis" x1="105" y1="620" x2="105" y2="120"/>
+  <text class="tick" x="92" y="625" text-anchor="end">10%</text><text class="tick" x="92" y="525" text-anchor="end">20%</text>
+  <text class="tick" x="92" y="425" text-anchor="end">30%</text><text class="tick" x="92" y="325" text-anchor="end">40%</text>
+  <text class="tick" x="92" y="225" text-anchor="end">50%</text><text class="tick" x="92" y="125" text-anchor="end">60%</text>
+  <text class="tick" x="105" y="645" text-anchor="middle">40%</text><text class="tick" x="265.91" y="645" text-anchor="middle">50%</text>
+  <text class="tick" x="426.82" y="645" text-anchor="middle">60%</text><text class="tick" x="587.73" y="645" text-anchor="middle">70%</text>
+  <text class="tick" x="748.64" y="645" text-anchor="middle">80%</text><text class="tick" x="909.55" y="645" text-anchor="middle">90%</text>
+  <text x="547" y="690" text-anchor="middle" font-size="16" font-weight="600">AppWorld task 成功率</text>
+  <text x="29" y="370" text-anchor="middle" font-size="16" font-weight="600" transform="rotate(-90 29 370)">实际 SLM 卸载率</text>
+
+  <g fill="none" stroke-width="2.2">
+    <line stroke="#178A84" x1="199.6" y1="267.5" x2="601.1" y2="267.5"/><line stroke="#178A84" x1="199.6" y1="259.5" x2="199.6" y2="275.5"/><line stroke="#178A84" x1="601.1" y1="259.5" x2="601.1" y2="275.5"/>
+    <line stroke="#3A78A5" x1="433.3" y1="344.4" x2="797.6" y2="344.4"/><line stroke="#3A78A5" x1="433.3" y1="336.4" x2="433.3" y2="352.4"/><line stroke="#3A78A5" x1="797.6" y1="336.4" x2="797.6" y2="352.4"/>
+    <line stroke="#D06A3B" x1="373.1" y1="431.1" x2="750.2" y2="431.1"/><line stroke="#D06A3B" x1="373.1" y1="423.1" x2="373.1" y2="439.1"/><line stroke="#D06A3B" x1="750.2" y1="423.1" x2="750.2" y2="439.1"/>
+    <line stroke="#747B38" x1="463.9" y1="465.7" x2="820.8" y2="465.7"/><line stroke="#747B38" x1="463.9" y1="457.7" x2="463.9" y2="473.7"/><line stroke="#747B38" x1="820.8" y1="457.7" x2="820.8" y2="473.7"/>
+    <line stroke="#B64E52" x1="373.1" y1="507.9" x2="750.2" y2="507.9"/><line stroke="#B64E52" x1="373.1" y1="499.9" x2="373.1" y2="515.9"/><line stroke="#B64E52" x1="750.2" y1="499.9" x2="750.2" y2="515.9"/>
+    <line stroke="#755E91" x1="463.9" y1="550.8" x2="820.8" y2="550.8"/><line stroke="#755E91" x1="463.9" y1="542.8" x2="463.9" y2="558.8"/><line stroke="#755E91" x1="820.8" y1="542.8" x2="820.8" y2="558.8"/>
+    <line stroke="#2E6E54" x1="623.0" y1="575.7" x2="930.6" y2="575.7"/><line stroke="#2E6E54" x1="623.0" y1="567.7" x2="623.0" y2="583.7"/><line stroke="#2E6E54" x1="930.6" y1="567.7" x2="930.6" y2="583.7"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="2">
+    <circle cx="409.6" cy="267.5" r="8" fill="#178A84"><title>T50: success 58.9% (33/56); actual SLM offload 45.3%; Wilson 95% CI 45.9%-70.8%</title></circle>
+    <circle cx="639.4" cy="344.4" r="8" fill="#3A78A5"><title>T55: success 73.2% (41/56); actual SLM offload 37.6%; Wilson 95% CI 60.4%-83.0%</title></circle>
+    <circle cx="582.0" cy="431.1" r="8" fill="#D06A3B"><title>T60: success 69.6% (39/56); actual SLM offload 28.9%; Wilson 95% CI 56.7%-80.1%</title></circle>
+    <circle cx="668.2" cy="465.7" r="8" fill="#747B38"><title>T65: success 75.0% (42/56); actual SLM offload 25.4%; Wilson 95% CI 62.3%-84.5%</title></circle>
+    <circle cx="582.0" cy="507.9" r="8" fill="#B64E52"><title>T70: success 69.6% (39/56); actual SLM offload 21.2%; Wilson 95% CI 56.7%-80.1%</title></circle>
+    <circle cx="668.2" cy="550.8" r="8" fill="#755E91"><title>T75: success 75.0% (42/56); actual SLM offload 16.9%; Wilson 95% CI 62.3%-84.5%</title></circle>
+    <circle cx="811.9" cy="575.7" r="8" fill="#2E6E54"><title>T80: success 83.9% (47/56); actual SLM offload 14.4%; Wilson 95% CI 72.2%-91.3%</title></circle>
+  </g>
+  <g class="label">
+    <text x="424" y="259">T50</text><text x="654" y="336">T55</text><text x="597" y="423">T60</text><text x="683" y="457">T65</text>
+    <text x="597" y="500">T70</text><text x="683" y="543">T75</text><text x="827" y="568">T80</text>
+  </g>
+  <text x="105" y="724" class="subtitle">点为单次 56-task dev 结果；横向误差线仅反映成功率 Wilson 区间。未给调用级卸载率画置信区间，不代表其不确定性为零。</text>
+</svg>

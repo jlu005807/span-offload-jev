@@ -20,7 +20,11 @@ THRESHOLDS = {"jev08": .8, "jev07": .7, "jev050": .5, "jev055": .55, "jev060": .
               "jev065": .65, "jev070": .7, "jev075": .75,
               "jev_v1_t50": .5, "jev_v1_t60": .6, "jev_v1_t70": .7,
               "jev_v2_t50": .5, "jev_v2_t60": .6, "jev_v2_t70": .7,
-              "jev_v3_t50": .5, "jev_v3_t60": .6, "jev_v3_t70": .7}
+              "jev_v3_t50": .5, "jev_v3_t60": .6, "jev_v3_t70": .7,
+              "jev_lora_v1_t50": .5, "jev_lora_v1_t55": .55,
+              "jev_lora_v1_t60": .6, "jev_lora_v1_t65": .65,
+              "jev_lora_v1_t75": .75,
+              "jev_lora_v1_t70": .7, "jev_lora_v1_t80": .8}
 V1_PROFILES = {
     "v1-t50": ("jev_v1_t50", "V1-T50", "v1", .5),
     "v1-t60": ("jev_v1_t60", "V1-T60", "v1", .6),
@@ -34,6 +38,15 @@ PROMPT_PROFILES = {
     "v3-t50": ("jev_v3_t50", "V3-T50", "v3", .5),
     "v3-t60": ("jev_v3_t60", "V3-T60", "v3", .6),
     "v3-t70": ("jev_v3_t70", "V3-T70", "v3", .7),
+}
+LORA_V1_PROFILES = {
+    "lora-v1-t50": ("jev_lora_v1_t50", "LoRA-V1-T50", .5),
+    "lora-v1-t55": ("jev_lora_v1_t55", "LoRA-V1-T55", .55),
+    "lora-v1-t60": ("jev_lora_v1_t60", "LoRA-V1-T60", .6),
+    "lora-v1-t65": ("jev_lora_v1_t65", "LoRA-V1-T65", .65),
+    "lora-v1-t70": ("jev_lora_v1_t70", "LoRA-V1-T70", .7),
+    "lora-v1-t75": ("jev_lora_v1_t75", "LoRA-V1-T75", .75),
+    "lora-v1-t80": ("jev_lora_v1_t80", "LoRA-V1-T80", .8),
 }
 V1_COST_PER_MILLION = {
     "large_model": {"in": .35, "out": 2.55},
@@ -51,6 +64,8 @@ def active_groups(profile=None):
         return HOLDOUT_GROUPS
     if profile in PROMPT_PROFILES:
         return (PROMPT_PROFILES[profile][0],)
+    if profile in LORA_V1_PROFILES:
+        return (LORA_V1_PROFILES[profile][0],)
     raise ValueError("Unknown JEV_COMPARE_PROFILE: " + profile)
 
 
@@ -78,6 +93,8 @@ def build_configs(raw, *, groups=None):
                                  threshold=THRESHOLDS[group])
             prompt_version = next((item[2] for item in PROMPT_PROFILES.values()
                                    if item[0] == group), None)
+            if group in {item[0] for item in LORA_V1_PROFILES.values()}:
+                prompt_version = "v1"
             if prompt_version:
                 runner["jev"]["prompt_version"] = prompt_version
             if prompt_version in {"v1", "v2", "v3"}:
@@ -197,7 +214,8 @@ def summarize(rows, *, groups=None, profile=None):
                 round(sum(r["estimated_execution_cost_usd"] for r in items), 10)
                 if items and all(type(r.get("estimated_execution_cost_usd")) in (int, float)
                                  for r in items) else None
-            ) if group_name in {item[0] for item in PROMPT_PROFILES.values()} else None,
+            ) if group_name in ({item[0] for item in PROMPT_PROFILES.values()} |
+                                {item[0] for item in LORA_V1_PROFILES.values()}) else None,
             "tasks_with_known_cost": sum(type(r.get("estimated_execution_cost_usd")) in (int, float)
                                          for r in items),
             "invalid_measurement_tasks": sum(r.get("valid_for_comparison") is False for r in items),
@@ -224,11 +242,13 @@ def check_services(config):
             response.raise_for_status()
             if model not in {x.get("id") for x in response.json().get("data", [])}:
                 raise RuntimeError(f"Expected model {model} unavailable at {url}")
-        url = config["runner"]["m4_memory"]["ollama_base_url"].rstrip("/") + "/api/tags"
-        response = client.get(url)
-        response.raise_for_status()
-        if "qwen3-embedding:0.6b" not in {x.get("name") for x in response.json().get("models", [])}:
-            raise RuntimeError("Original embedding model unavailable")
+        if (config["runner"].get("m4_memory", {}).get("enabled") or
+                config["runner"].get("l2_add4", {}).get("enabled")):
+            url = config["runner"]["m4_memory"]["ollama_base_url"].rstrip("/") + "/api/tags"
+            response = client.get(url)
+            response.raise_for_status()
+            if "qwen3-embedding:0.6b" not in {x.get("name") for x in response.json().get("models", [])}:
+                raise RuntimeError("Original embedding model unavailable")
 
 
 def execute_cell(group, config, task, output, experiment, split):
@@ -270,17 +290,22 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
     profile = os.environ.get("JEV_COMPARE_PROFILE", "baseline")
     groups = active_groups(profile)
     is_prompt_profile = profile in PROMPT_PROFILES
+    is_lora_profile = profile in LORA_V1_PROFILES
     if is_prompt_profile and len(tasks) != 33:
         raise ValueError("Prompt threshold runs require exactly 33 validation tasks")
+    if is_lora_profile and len(tasks) != 56:
+        raise ValueError("LoRA-V1 threshold runs require exactly 56 official dev tasks")
     configs = build_configs(raw, groups=groups)
     health = health or check_services
     smoke_task = (smoke_task or os.environ.get("JEV_COMPARE_SMOKE_TASK")
-                  or (tasks[0] if is_prompt_profile else "099174d_1"))
+                  or (tasks[0] if is_prompt_profile or is_lora_profile else "099174d_1"))
     if task_splits is None or any(t not in task_splits for t in [*tasks, smoke_task]):
         raise ValueError("Official dataset split required for every task")
     if is_prompt_profile and any(task_splits[t] not in {"train", "dev", "test_normal", "test_challenge"}
                               for t in [*tasks, smoke_task]):
         raise ValueError("V1 tasks must map to an official AppWorld split")
+    if is_lora_profile and any(task_splits[t] != "dev" for t in [*tasks, smoke_task]):
+        raise ValueError("LoRA-V1 threshold runs require exactly 56 official dev tasks")
     output.mkdir(parents=True)
     config_paths, hashes = {}, {}
     for group, config in configs.items():
@@ -292,20 +317,26 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
     commit_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], text=True, cwd=Path(__file__).resolve().parents[1]
     ).strip()
+    lora_profile_data = LORA_V1_PROFILES.get(profile)
     write_json(output / "manifest.json", {"task_ids": tasks, "task_splits": task_splits,
         "groups": groups, "experiment_profile": profile,
-        "experiment_group_id": PROMPT_PROFILES[profile][1] if is_prompt_profile else None,
+        "experiment_group_id": (PROMPT_PROFILES[profile][1] if is_prompt_profile else
+                                 lora_profile_data[1] if is_lora_profile else None),
         "run_id": run_id, "git_commit_sha": commit_sha,
-        "prompt_version": PROMPT_PROFILES[profile][2] if is_prompt_profile else None,
+        "prompt_version": (PROMPT_PROFILES[profile][2] if is_prompt_profile else
+                           "v1" if is_lora_profile else None),
         "prompt_sha256": (_context_prompt_sha256(PROMPT_PROFILES[profile][2])
-                          if is_prompt_profile else None),
-        "price_table_version": "openrouter-2026-10" if is_prompt_profile else None,
+                          if is_prompt_profile else
+                          _context_prompt_sha256("v1") if is_lora_profile else None),
+        "price_table_version": "openrouter-2026-10" if is_prompt_profile or is_lora_profile else None,
         "cost_basis": ("Execution-model estimate from token counts at openrouter-2026-10 list prices; "
-                       "no cache discount; excludes Jev service cost") if is_prompt_profile else None,
+                       "no cache discount; excludes Jev service cost")
+                      if is_prompt_profile or is_lora_profile else None,
         "holdout_evaluation": profile == "holdout", "config_sha256": hashes,
         "smoke_task_id": smoke_task, "smoke_excluded_from_formal_results": True,
         "order": "single threshold group, manifest order",
-        "development_experiment": profile != "holdout"})
+        "development_experiment": profile != "holdout",
+        "task_scope": "56_official_dev_tasks" if is_lora_profile else None})
     rows, smoke, completed = [], [], set()
     def run(stage, task, group):
         row = execute(group, config_paths[group], task, output/stage/group/task,
@@ -316,9 +347,10 @@ def run_comparison(raw, tasks, output, *, execute=execute_cell, health=None, tas
         row.update(group=group, stage=stage, run_id=run_id, git_commit_sha=commit_sha,
                    valid_for_comparison=not errors,
                    measurement_errors=errors, config_sha256=hashes[group])
-        if is_prompt_profile:
-            row["experiment_group_id"] = PROMPT_PROFILES[profile][1]
-            row["prompt_version"] = PROMPT_PROFILES[profile][2]
+        if is_prompt_profile or is_lora_profile:
+            row["experiment_group_id"] = (PROMPT_PROFILES[profile][1] if is_prompt_profile
+                                           else lora_profile_data[1])
+            row["prompt_version"] = (PROMPT_PROFILES[profile][2] if is_prompt_profile else "v1")
             row["prompt_sha256"] = (row.get("jev_audit") or {}).get("prompt_sha256")
             row["price_table_version"] = "openrouter-2026-10"
             row["estimated_execution_cost_usd"] = _estimated_execution_cost_usd(row)

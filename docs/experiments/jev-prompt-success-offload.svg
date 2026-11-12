@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="800" viewBox="0 0 1180 800" role="img" aria-labelledby="title desc">
+  <title id="title">Jev prompt versions: success rate vs SLM offload rate</title>
+  <desc id="desc">Nine points for V1, V2 and V3 at thresholds 0.50, 0.60 and 0.70. Hollow markers identify incomplete telemetry, where the vertical coordinate is only the observed completed-call ratio.</desc>
+  <style>
+    text { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; fill: #263746; }
+    .muted { fill: #657784; }
+    .grid { stroke: #dfe6eb; stroke-width: 1; }
+    .axis { stroke: #405563; stroke-width: 1.5; }
+    .label { font-size: 14px; }
+    .point-label { font-size: 14px; font-weight: 600; }
+    .small { font-size: 13px; }
+  </style>
+  <rect width="1180" height="800" fill="#ffffff"/>
+  <text x="72" y="54" font-size="27" font-weight="700">提示词版本：成功率与 SLM 卸载率</text>
+  <text x="72" y="83" class="muted" font-size="15">每个点代表一个提示词版本 × 阈值；版本选择先看质量与卸载的共同表现</text>
+
+  <!-- Plot region: x=50..85%, y=0..80%. -->
+  <g class="grid">
+    <line x1="145" y1="160" x2="890" y2="160"/><line x1="145" y1="217.5" x2="890" y2="217.5"/>
+    <line x1="145" y1="275" x2="890" y2="275"/><line x1="145" y1="332.5" x2="890" y2="332.5"/>
+    <line x1="145" y1="390" x2="890" y2="390"/><line x1="145" y1="447.5" x2="890" y2="447.5"/>
+    <line x1="145" y1="505" x2="890" y2="505"/><line x1="145" y1="562.5" x2="890" y2="562.5"/>
+    <line x1="145" y1="620" x2="890" y2="620"/>
+    <line x1="145" y1="160" x2="145" y2="620"/><line x1="251.4" y1="160" x2="251.4" y2="620"/>
+    <line x1="357.9" y1="160" x2="357.9" y2="620"/><line x1="464.3" y1="160" x2="464.3" y2="620"/>
+    <line x1="570.7" y1="160" x2="570.7" y2="620"/><line x1="677.1" y1="160" x2="677.1" y2="620"/>
+    <line x1="783.6" y1="160" x2="783.6" y2="620"/><line x1="890" y1="160" x2="890" y2="620"/>
+  </g>
+  <g class="axis">
+    <line x1="145" y1="620" x2="890" y2="620"/><line x1="145" y1="160" x2="145" y2="620"/>
+  </g>
+  <g class="label muted" text-anchor="end">
+    <text x="132" y="625">0</text><text x="132" y="567">10</text><text x="132" y="510">20</text>
+    <text x="132" y="452">30</text><text x="132" y="395">40</text><text x="132" y="337">50</text>
+    <text x="132" y="280">60</text><text x="132" y="222">70</text><text x="132" y="165">80</text>
+  </g>
+  <g class="label muted" text-anchor="middle">
+    <text x="145" y="645">50</text><text x="251.4" y="645">55</text><text x="357.9" y="645">60</text>
+    <text x="464.3" y="645">65</text><text x="570.7" y="645">70</text><text x="677.1" y="645">75</text>
+    <text x="783.6" y="645">80</text><text x="890" y="645">85</text>
+  </g>
+  <text x="517" y="683" text-anchor="middle" font-size="16" font-weight="600">任务成功率（%）</text>
+  <text x="43" y="390" text-anchor="middle" font-size="16" font-weight="600" transform="rotate(-90 43 390)">实际 SLM 卸载率（%）</text>
+
+  <!-- V1: blue circles. -->
+  <g fill="#2878B5" stroke="#ffffff" stroke-width="2">
+    <circle cx="370.6" cy="247.9" r="8"/><circle cx="499.1" cy="333.7" r="8"/>
+  </g>
+  <text x="288" y="231" class="point-label" fill="#2878B5">V1-T50</text>
+  <text x="505" y="355" class="point-label" fill="#2878B5">V1-T60</text>
+  <circle cx="821.8" cy="468.7" r="9" fill="#ffffff" stroke="#2878B5" stroke-width="3" stroke-dasharray="4 2"/>
+  <text x="833" y="457" class="point-label" fill="#2878B5">V1-T70*</text>
+
+  <!-- V2: orange squares. -->
+  <g fill="#D17A22" stroke="#ffffff" stroke-width="2">
+    <rect x="491.1" y="281.4" width="16" height="16" rx="2"/><rect x="563.7" y="472.4" width="16" height="16" rx="2"/>
+  </g>
+  <text x="511" y="276" class="point-label" fill="#B45E10">V2-T50</text>
+  <text x="585" y="493" class="point-label" fill="#B45E10">V2-T70</text>
+  <rect x="361.6" y="391.7" width="18" height="18" rx="2" fill="#ffffff" stroke="#D17A22" stroke-width="3" stroke-dasharray="4 2"/>
+  <text x="282" y="435" class="point-label" fill="#B45E10">V2-T60*</text>
+
+  <!-- V3: green diamonds. -->
+  <g fill="#2A8C67" stroke="#ffffff" stroke-width="2">
+    <path d="M176.9 206.6 l9 9 -9 9 -9 -9 z"/><path d="M434.3 252.2 l9 9 -9 9 -9 -9 z"/>
+    <path d="M434.3 394.5 l9 9 -9 9 -9 -9 z"/>
+  </g>
+  <text x="101" y="202" class="point-label" fill="#247553">V3-T50</text>
+  <text x="447" y="245" class="point-label" fill="#247553">V3-T60</text>
+  <text x="447" y="429" class="point-label" fill="#247553">V3-T70</text>
+
+  <!-- Version legend. -->
+  <g font-size="15">
+    <text x="942" y="169" font-weight="700">提示词版本</text>
+    <circle cx="952" cy="199" r="7" fill="#2878B5"/><text x="970" y="204">V1</text>
+    <rect x="945" y="220" width="14" height="14" rx="2" fill="#D17A22"/><text x="970" y="233">V2</text>
+    <path d="M952 247 l8 8 -8 8 -8 -8 z" fill="#2A8C67"/><text x="970" y="260">V3</text>
+    <text x="942" y="302" font-weight="700">数据状态</text>
+    <circle cx="952" cy="329" r="7" fill="#657784"/><text x="970" y="334">完整正式卸载率</text>
+    <circle cx="952" cy="359" r="7" fill="#ffffff" stroke="#657784" stroke-width="2.5" stroke-dasharray="3 2"/>
+    <text x="970" y="364">仅有已记录调用比例</text>
+  </g>
+
+  <rect x="930" y="405" width="220" height="135" rx="8" fill="#f3f6f8" stroke="#d8e1e7"/>
+  <text x="948" y="432" font-size="14" font-weight="700">空心点说明</text>
+  <text x="948" y="458" class="small">* V1-T70：26.4% 已记录调用比例</text>
+  <text x="948" y="482" class="small">* V2-T60：38.2% 已记录调用比例</text>
+  <text x="948" y="510" class="small muted">两组遥测不完整，不是正式卸载率</text>
+
+  <line x1="72" y1="720" x2="1150" y2="720" stroke="#dfe6eb"/>
+  <text x="72" y="750" class="muted" font-size="13">V2-T60 成功率按 20/33 计，未运行的 1 项按失败处理。所有数据来自同一 33 项开发/验证任务集；非独立 holdout。</text>
+</svg>
