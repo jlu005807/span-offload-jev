@@ -29,7 +29,8 @@ export PYTHONUNBUFFERED=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREA
 test ! -e "$OUT"
 mkdir "$RUN_ROOT"
 cp "${BASH_SOURCE[0]}" "$RUN_ROOT/submitted-job.sbatch"
-test "$(git -C "$PROJECT" rev-parse HEAD)" = "${JEV_TEST_CODE_COMMIT:?Set the frozen code commit}"
+cd "$PROJECT"
+test "$(git rev-parse HEAD)" = "${JEV_TEST_CODE_COMMIT:?Set the frozen code commit}"
 cd "$CODE_DIR"
 sha256sum -c test-preparation-source.sha256
 cp test-preparation-source.sha256 "$RUN_ROOT/"
