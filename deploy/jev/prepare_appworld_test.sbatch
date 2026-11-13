@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit with --dependency=afterok:<label job>; CPU-only conversion and encoding.
+# Submit with --dependency=afterok:<label job>; CPU-only conversion.
 #SBATCH --partition=x86_64
 #SBATCH --account=zhangyc29
 #SBATCH --qos=32gpu
@@ -21,9 +21,6 @@ LABEL_JOB="${JEV_TEST_LABEL_JOB:?Set to the validated upstream label job}"
 OUT="$LORA_PROJECT/data/openjev-v1-context-test-labeljob$LABEL_JOB"
 RUN_ROOT="$LORA_PROJECT/runs/convert-test-${SLURM_JOB_ID:?}"
 APPWORLD_PYTHON=/share/home/shenwsh3/ozy/span-offload-jev-prompts/.venv/bin/python
-CONTAINER=/share/home/shenwsh3/singularity/vllm_qwen35_sandbox
-OPENJEV_PYTHON="$LORA_PROJECT/.venv-openjev-container/bin/python"
-MODEL_RUN="$LORA_PROJECT/runs/finetune/appworld-v1-context-r16-lr5e-5-seed0-20261107"
 export PYTHONUNBUFFERED=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
 
 test ! -e "$OUT"
@@ -44,15 +41,7 @@ cp test-preparation-source.sha256 "$RUN_ROOT/"
   --dev-file "$LORA_PROJECT/data/openjev-v1-context/dev.jsonl" \
   --expected-label-job "$LABEL_JOB" --out "$OUT"
 
-module load singularity/4.0.2
-module load gcc/9.1.0
-# No --nv and no wev.inference.load: only tokenize and check the real loader.
-singularity exec --cleanenv --bind /share:/share \
-  --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 \
-  --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 --env OPENBLAS_NUM_THREADS=2 \
-  "$CONTAINER" "$OPENJEV_PYTHON" "$CODE_DIR/prepare_appworld_test.py" \
-  --validate-loader --model-run "$MODEL_RUN" --out "$OUT"
-
-cp "$OUT/conversion_summary.json" "$OUT/loader_acceptance.json" \
-  "$OUT/loader_model_identity.json" "$RUN_ROOT/"
-echo "TEST_DATA_READY_FOR_EVALUATION $OUT"
+cp "$OUT/conversion_summary.json" "$RUN_ROOT/"
+echo "TEST_FORMAT_CONVERSION_COMPLETE $OUT"
+# The GPU scoring job will run the native OpenJev loader and record its
+# accepted/dropped sample counts before producing P(SLM), AUC and AP.

@@ -15,6 +15,11 @@ _spec = importlib.util.spec_from_file_location(
 converter = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(converter)
 
+# The test trace records the served Hugging Face repo ID for an older endpoint.
+# The matching train/dev System One state uses the model identity from this map.
+MODEL_ID_ALIASES = {'Qwen/Qwen3.5-9B': 'Qwen3.5-9B'}
+CANONICAL_MODEL_IDS = {'Qwen3.8-27B', 'Qwen3.5-9B'}
+
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -83,7 +88,10 @@ def prepare_test(*, data: Path, labels: Path, label_summary: Path, label_receipt
         raise ValueError('V1 prompt changed')
 
     converted, excluded = [], []
+    model_alias_rows = Counter()
+    model_alias_tasks: dict[str, set[str]] = {}
     cached_task, trace = None, None
+    source_model_info, aliases = {}, {}
     for row in sorted(rows, key=lambda r: (r['task_id'], r['k'])):
         identity = {'task_id': row['task_id'], 'k': row['k'], 'label': row['label']}
         if row['mask'] == 0:
@@ -92,15 +100,41 @@ def prepare_test(*, data: Path, labels: Path, label_summary: Path, label_receipt
         if row['task_id'] != cached_task:
             cached_task = row['task_id']
             trace = json.loads((data / cached_task / 'original/trace.json').read_text(encoding='utf-8'))
+            models = trace['trace_metadata']['agent_configuration']['models']
+            raw_pair = {key: models[key].get('model_id') for key in ['large', 'small']}
+            served_pair = {key: models[key].get('served_model_name') for key in ['large', 'small']}
+            canonical, aliases = {}, {}
+            for key in ['large', 'small']:
+                raw = raw_pair[key]
+                if raw != served_pair[key]:
+                    raise ValueError(f'Trace model ID differs from served name: {cached_task} {key}')
+                normalized = MODEL_ID_ALIASES.get(raw, raw)
+                if normalized not in CANONICAL_MODEL_IDS:
+                    raise ValueError(f'Unknown test model identity: {cached_task} {key} {raw}')
+                canonical[key] = normalized
+                if raw != normalized:
+                    aliases[raw] = normalized
+            if (canonical['large'], canonical['small']) != ('Qwen3.8-27B', 'Qwen3.5-9B'):
+                raise ValueError('Test trace model pair differs from train/dev')
+            source_model_info = {
+                'large_model': raw_pair['large'], 'small_model': raw_pair['small'],
+                'large_served_model_name': served_pair['large'],
+                'small_served_model_name': served_pair['small'],
+            }
+            # Normalize only the in-memory copy before the existing converter's
+            # history/character limits; original trace files remain untouched.
+            for key in ['large', 'small']:
+                models[key]['model_id'] = canonical[key]
         try:
             item = converter.convert_label_row(row, trace, max_history_spans=10,
                                                max_state_chars=max_state_chars, request_model_id='wev-1.7b')
         except converter.ConversionExcluded as error:
             excluded.append({**identity, 'reason': error.reason})
             continue
-        if (item['request']['state']['model_info']['large_model'],
-                item['request']['state']['model_info']['small_model']) != ('Qwen3.8-27B', 'Qwen3.5-9B'):
-            raise ValueError('Test trace model pair differs from train/dev')
+        item['_meta']['source_model_info'] = source_model_info
+        for raw in aliases:
+            model_alias_rows[raw] += 1
+            model_alias_tasks.setdefault(raw, set()).add(row['task_id'])
         converted.append(item)
 
     exclusions = Counter(row['reason'] for row in excluded)
@@ -117,6 +151,11 @@ def prepare_test(*, data: Path, labels: Path, label_summary: Path, label_receipt
                  'excluded_online_unavailable': len(excluded) - exclusions.get('unknown_or_masked', 0),
                  'excluded_by_reason': dict(exclusions),
                  'label_distribution': dict(Counter(r['labels']['route'] for r in converted))},
+        'model_alias_normalization': {
+            source: {'canonical_model_id': MODEL_ID_ALIASES[source], 'rows': count,
+                     'task_count': len(model_alias_tasks[source])}
+            for source, count in sorted(model_alias_rows.items())
+        },
         'train_dev_task_overlap': 0, 'train_dev_sha256': reference_hashes,
         'input_sha256': {str(p): digest(p) for p in [labels, label_summary, label_receipt, data / 'MANIFEST.json']},
         'source_sha256': {p.name: digest(p) for p in [Path(__file__), Path(converter.__file__)]},

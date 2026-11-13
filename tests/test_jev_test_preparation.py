@@ -26,6 +26,9 @@ def digest(path):
 def make_inputs(tmp_path):
     data = tmp_path / 'data'
     trace = _trace()
+    models = trace['trace_metadata']['agent_configuration']['models']
+    for config in models.values():
+        config['served_model_name'] = config['model_id']
     trace_dir = data / 'task-1' / 'original'
     trace_dir.mkdir(parents=True)
     (trace_dir / 'trace.json').write_text(json.dumps(trace), encoding='utf-8')
@@ -69,6 +72,23 @@ def test_test_conversion_reuses_v1_and_preserves_inputs(tmp_path):
     assert before == {name: digest(args[name]) for name in before}
     assert not (args['out'] / 'train.jsonl').exists()
     assert not (args['out'] / 'dev.jsonl').exists()
+
+
+def test_test_model_alias_is_normalized_for_model_input_and_preserved_as_provenance(tmp_path):
+    args = make_inputs(tmp_path)
+    trace_path = args['data'] / 'task-1' / 'original' / 'trace.json'
+    trace = json.loads(trace_path.read_text())
+    trace['trace_metadata']['agent_configuration']['models']['small'].update(
+        model_id='Qwen/Qwen3.5-9B', client_model='openai/Qwen/Qwen3.5-9B',
+        served_model_name='Qwen/Qwen3.5-9B')
+    trace_path.write_text(json.dumps(trace), encoding='utf-8')
+    preparation.prepare_test(**args)
+    row = json.loads((args['out'] / 'test.jsonl').read_text())
+    assert row['request']['state']['model_info']['small_model'] == 'Qwen3.5-9B'
+    assert row['_meta']['source_model_info']['small_model'] == 'Qwen/Qwen3.5-9B'
+    summary = json.loads((args['out'] / 'conversion_summary.json').read_text())
+    assert summary['model_alias_normalization']['Qwen/Qwen3.5-9B']['rows'] == 1
+    assert json.loads(trace_path.read_text())['trace_metadata']['agent_configuration']['models']['small']['model_id'] == 'Qwen/Qwen3.5-9B'
 
 
 @pytest.mark.parametrize('failure', ['unfinished', 'tampered_labels', 'duplicate', 'overlap', 'existing_output'])
