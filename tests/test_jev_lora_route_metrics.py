@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
+import sys
+import tempfile
 import unittest
 
 
@@ -58,6 +63,46 @@ class RouteMetricTests(unittest.TestCase):
         for threshold in (-0.1, 1.1, float("nan")):
             with self.subTest(threshold=threshold), self.assertRaises(ValueError):
                 metrics.threshold_metrics([0, 1], [0.1, 0.9], threshold)
+
+    def test_test_evaluation_reads_test_split_and_preserves_point_identity(self):
+        torch = ModuleType('torch')
+        torch.bfloat16, torch.float32 = 'bf16', 'fp32'
+        data = ModuleType('wev.data')
+        inference = ModuleType('wev.inference')
+        used_splits = []
+
+        def split_file(directory, split):
+            used_splits.append(split)
+            return directory / f'{split}.jsonl'
+
+        data.split_file = split_file
+        data.load_items = lambda *args, **kwargs: ([{
+            'meta': [{'type': 'choice', 'keys': ['LLM', 'SLM']}],
+            'enc': {'labels': [1]}, '_meta': {'task_id': 'test-task', 'k': 3},
+        }], 0)
+        model = SimpleNamespace(tokenizer=object(), max_state=4096, max_branch=2048,
+                                model=SimpleNamespace(probs=lambda _: [[[0.2, 0.8]]]))
+        inference.load = lambda *args, **kwargs: model
+        modules = {'torch': torch, 'wev': ModuleType('wev'), 'wev.data': data, 'wev.inference': inference}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules):
+            out = Path(tmp) / 'evaluation'
+            result = metrics.evaluate_split(run='frozen-checkpoint', data_dir=Path(tmp),
+                                            out_dir=out, thresholds=[0.65], split='test')
+            prediction = json.loads((out / 'predictions.jsonl').read_text())
+        self.assertEqual(used_splits, ['test'])
+        self.assertEqual(result['split'], 'test')
+        self.assertEqual(prediction['task_id'], 'test-task')
+        self.assertEqual(prediction['k'], 3)
+        self.assertEqual(prediction['gold_route'], 'SLM')
+        self.assertEqual(prediction['p_slm'], 0.8)
+
+    def test_cli_forwards_test_split_without_loading_gpu(self):
+        summary = {'split': 'test'}
+        with patch.object(metrics, 'evaluate_split', return_value=summary) as evaluate:
+            result = metrics.main(['--run', 'checkpoint', '--data', 'test-dir',
+                                   '--out', 'new-eval', '--split', 'test', '--thresholds', '0.65'])
+        self.assertEqual(result, 0)
+        self.assertEqual(evaluate.call_args.kwargs['split'], 'test')
 
 
 if __name__ == "__main__":

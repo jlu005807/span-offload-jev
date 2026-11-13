@@ -115,10 +115,12 @@ def _parse_thresholds(value: str) -> list[float]:
     return thresholds
 
 
-def evaluate_dev(*, run: str, data_dir: Path, out_dir: Path, thresholds: list[float],
-                 dtype: str = "bf16", device: str | None = None, limit: int = 0,
-                 max_tokens: int = 6144) -> dict:
-    """Run inference on dev only and save per-example probabilities plus metric tables."""
+def evaluate_split(*, run: str, data_dir: Path, out_dir: Path, thresholds: list[float],
+                   split: str = "dev", dtype: str = "bf16", device: str | None = None,
+                   limit: int = 0, max_tokens: int = 6144) -> dict:
+    """Score a labelled dev/test split; save probabilities and gold routes without training."""
+    if split not in {"dev", "test"}:
+        raise ValueError("evaluation split must be dev or test")
     if out_dir.exists():
         raise FileExistsError(f"refusing to overwrite evaluation output: {out_dir}")
 
@@ -127,7 +129,7 @@ def evaluate_dev(*, run: str, data_dir: Path, out_dir: Path, thresholds: list[fl
     from wev.inference import load
 
     model = load(run, device=device, dtype=torch.bfloat16 if dtype == "bf16" else torch.float32)
-    source = split_file(data_dir, "dev")
+    source = split_file(data_dir, split)
     items, dropped = load_items(model.tokenizer, source, model.max_state, model.max_branch,
                                 max_tokens=max_tokens, limit=limit or None)
     if not items:
@@ -165,7 +167,7 @@ def evaluate_dev(*, run: str, data_dir: Path, out_dir: Path, thresholds: list[fl
     threshold_rows = [threshold_metrics(labels, probabilities, value) for value in thresholds]
     summary = {
         "run": run,
-        "split": "dev",
+        "split": split,
         "data_file": str(source),
         "positive_class": "SLM",
         "sample_count": len(labels),
@@ -191,25 +193,32 @@ def evaluate_dev(*, run: str, data_dir: Path, out_dir: Path, thresholds: list[fl
     return summary
 
 
+def evaluate_dev(**kwargs) -> dict:
+    """Keep the existing Python entry point dev-only for historical callers."""
+    return evaluate_split(**kwargs, split="dev")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True, help="OpenJev training run or exported model directory")
-    parser.add_argument("--data", type=Path, required=True, help="directory containing dev.jsonl")
+    parser.add_argument("--data", type=Path, required=True, help="directory containing the selected split JSONL")
+    parser.add_argument("--split", choices=("dev", "test"), default="dev",
+                        help="labelled evaluation split; test never updates model weights")
     parser.add_argument("--out", type=Path, required=True, help="new output directory; existing paths are refused")
     parser.add_argument("--thresholds", type=_parse_thresholds,
                         default=_parse_thresholds("0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9"),
                         help="comma-separated SLM probability cutoffs, e.g. 0.3,0.5,0.7")
     parser.add_argument("--dtype", choices=("bf16", "fp32"), default="bf16")
     parser.add_argument("--device", default=None, help="defaults to OpenJev's device selection")
-    parser.add_argument("--limit", type=int, default=0, help="optional dev subset for smoke evaluation")
+    parser.add_argument("--limit", type=int, default=0, help="optional subset for smoke evaluation")
     parser.add_argument("--max-tokens", type=int, default=6144,
                         help="match the training loader's whole-record token limit")
     args = parser.parse_args(argv)
     if args.limit < 0 or args.max_tokens < 1:
         parser.error("--limit must be >= 0 and --max-tokens must be > 0")
-    summary = evaluate_dev(run=args.run, data_dir=args.data, out_dir=args.out,
-                           thresholds=args.thresholds, dtype=args.dtype,
-                           device=args.device, limit=args.limit, max_tokens=args.max_tokens)
+    summary = evaluate_split(run=args.run, data_dir=args.data, out_dir=args.out,
+                             thresholds=args.thresholds, split=args.split, dtype=args.dtype,
+                             device=args.device, limit=args.limit, max_tokens=args.max_tokens)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
