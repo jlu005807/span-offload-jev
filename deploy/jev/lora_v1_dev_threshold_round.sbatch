@@ -17,6 +17,8 @@
 set -euo pipefail
 
 PROJECT="${PROJECT:-/share/home/shenwsh3/ozy/span-offload-jev-prompts}"
+JEV_ROUND_INDEX="${JEV_ROUND_INDEX:-2}"
+[[ "$JEV_ROUND_INDEX" =~ ^[1-9][0-9]*$ ]]
 THRESHOLD_SCRIPT="$PROJECT/deploy/jev/lora_v1_dev_threshold.sbatch"
 JEV_COMPARE_BASE="${JEV_COMPARE_BASE:?Set to the frozen round configuration}"
 JEV_LARGE_API_BASE="${JEV_LARGE_API_BASE:?Set to the verified Qwen3.8-27B API base}"
@@ -32,14 +34,14 @@ for threshold in "${THRESHOLDS[@]}"; do
   export JEV_THRESHOLD="$threshold"
   export JEV_COMPARE_BASE JEV_LARGE_API_BASE JEV_SMALL_API_BASE
   export JEV_PORT="$((19000 + SLURM_JOB_ID % 900 + index))"
-  echo "ROUND2_THRESHOLD_START $JEV_THRESHOLD port=$JEV_PORT"
+  echo "ROUND${JEV_ROUND_INDEX}_THRESHOLD_START $JEV_THRESHOLD port=$JEV_PORT"
 
   source "$THRESHOLD_SCRIPT"
   cleanup
   jev_pid=
   trap - EXIT TERM INT
-  echo "ROUND2_THRESHOLD_FINISHED $JEV_THRESHOLD"
+  echo "ROUND${JEV_ROUND_INDEX}_THRESHOLD_FINISHED $JEV_THRESHOLD"
   index=$((index + 1))
 done
 
-echo "LORA_THRESHOLD_ROUND_COMPLETE job=$SLURM_JOB_ID thresholds=${#THRESHOLDS[@]}"
+echo "LORA_THRESHOLD_ROUND_COMPLETE round=$JEV_ROUND_INDEX job=$SLURM_JOB_ID thresholds=${#THRESHOLDS[@]}"
